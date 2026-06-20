@@ -878,6 +878,16 @@ async function initApp() {
     if (typeof window.renderProfile === 'function') window.renderProfile();
     if (typeof window.renderQueue === 'function') window.renderQueue();
     if (typeof window.initSearch === 'function') window.initSearch();
+
+    // Restaura a música que estava tocando antes do app fechar/recarregar
+    if (typeof window.restorePlayerSession === 'function') {
+        await window.restorePlayerSession();
+    }
+
+    // Inicia a persistência periódica do estado do player
+    if (typeof window.initSessionPersistence === 'function') {
+        window.initSessionPersistence();
+    }
 }
 
 function checkDeepLink() {

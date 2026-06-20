@@ -25,6 +25,7 @@ const SHELL_ASSETS = [
   './login.css',
   './supabase-config.js',
   './search.js',
+  './player-session.js',
   './player-core.js',
   './player-ui.js',
   './player-audio-lyrics.js',
