@@ -1,10 +1,16 @@
 // ============================================================
-// Fenda Music — Service Worker v2
+// Fenda Music — Service Worker v3
+// Estratégia: Cache-first para o shell, sem interrupção do player.
+//
+// PROBLEMA RESOLVIDO:
+//   - skipWaiting() + clients.claim() fazem o novo SW tomar
+//     controle das abas abertas IMEDIATAMENTE, matando o player.
+//   - Agora o novo SW só ativa quando TODAS as abas forem fechadas,
+//     OU quando o usuário clicar em "Atualizar" no app.
 // ============================================================
 
-const CACHE_NAME = 'fenda-music-v3';
+const CACHE_NAME = 'fenda-music-v4';
 
-// Arquivos locais que ficam em cache (shell do app)
 const SHELL_ASSETS = [
   './',
   './index.html',
@@ -29,12 +35,11 @@ const SHELL_ASSETS = [
   './fonts/material-symbols-rounded.woff2',
 ];
 
-// ── Instalação: pré-cacheia todo o shell ───────────────────
+// ── Instalação: pré-cacheia o shell ───────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[SW] Cacheando shell do app...');
-      // Tenta cachear cada arquivo individualmente para não falhar tudo se um errar
       return Promise.allSettled(
         SHELL_ASSETS.map(url =>
           cache.add(url).catch(err => console.warn('[SW] Não cacheou:', url, err))
@@ -42,10 +47,12 @@ self.addEventListener('install', (event) => {
       );
     })
   );
-  self.skipWaiting();
+  // ❌ NÃO chamar self.skipWaiting() aqui.
+  // O novo SW fica em "waiting" até que todas as abas fechem
+  // ou o usuário dispare manualmente via postMessage.
 });
 
-// ── Ativação: remove caches antigos ───────────────────────
+// ── Ativação: limpa caches antigos ───────────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -59,28 +66,38 @@ self.addEventListener('activate', (event) => {
       )
     )
   );
-  self.clients.claim();
+  // ❌ NÃO chamar self.clients.claim() aqui automaticamente.
+  // clients.claim() tomaria controle das abas abertas agora,
+  // interrompendo o player. Só fazemos isso a pedido do app.
 });
 
-// ── Fetch: estratégia por tipo de recurso ─────────────────
+// ── Mensagem do app: "SKIP_WAITING" ──────────────────────────
+// O app envia esta mensagem quando o usuário clica em "Atualizar".
+// Aí sim ativamos o novo SW imediatamente.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[SW] Usuário solicitou atualização — skipWaiting()');
+    self.skipWaiting();
+  }
+});
+
+// ── Fetch: estratégia por tipo de recurso ─────────────────────
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Supabase: dados e áudio → sempre rede, sem cache no SW
-  // (os dados são gerenciados pelo CacheDB no app)
+  // Supabase (dados e áudio): sempre rede, sem cache no SW
   if (url.hostname.includes('supabase.co')) {
     event.respondWith(
-      fetch(event.request).catch(() => {
-        // Offline: retorna resposta vazia para não travar
-        return new Response(JSON.stringify([]), {
+      fetch(event.request).catch(() =>
+        new Response(JSON.stringify([]), {
           headers: { 'Content-Type': 'application/json' }
-        });
-      })
+        })
+      )
     );
     return;
   }
 
-  // Google Fonts CSS e woff2 → cache first, rede como fallback
+  // Google Fonts: cache first
   if (
     url.hostname === 'fonts.googleapis.com' ||
     url.hostname === 'fonts.gstatic.com'
@@ -89,25 +106,25 @@ self.addEventListener('fetch', (event) => {
       caches.open(CACHE_NAME).then((cache) =>
         cache.match(event.request).then((cached) => {
           if (cached) return cached;
-          return fetch(event.request).then((response) => {
-            if (response.ok) cache.put(event.request, response.clone());
-            return response;
-          }).catch(() => cached); // offline: retorna cache mesmo expirado
+          return fetch(event.request).then((res) => {
+            if (res.ok) cache.put(event.request, res.clone());
+            return res;
+          }).catch(() => cached);
         })
       )
     );
     return;
   }
 
-  // jsDelivr (SDK Supabase) → cache first
+  // jsDelivr (SDK Supabase): cache first
   if (url.hostname === 'cdn.jsdelivr.net') {
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) =>
         cache.match(event.request).then((cached) => {
           if (cached) return cached;
-          return fetch(event.request).then((response) => {
-            if (response.ok) cache.put(event.request, response.clone());
-            return response;
+          return fetch(event.request).then((res) => {
+            if (res.ok) cache.put(event.request, res.clone());
+            return res;
           });
         })
       )
@@ -115,18 +132,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Arquivos locais → cache first, rede como fallback
+  // Shell local: cache first, rede como fallback
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        // Cacheia dinamicamente qualquer arquivo local novo
-        if (response.ok && url.origin === self.location.origin) {
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
+      return fetch(event.request).then((res) => {
+        if (res.ok && url.origin === self.location.origin) {
+          caches.open(CACHE_NAME).then(c => c.put(event.request, res.clone()));
         }
-        return response;
+        return res;
       }).catch(() => {
-        // Offline e sem cache: retorna player.html para qualquer página
         if (event.request.destination === 'document') {
           return caches.match('./player.html') || caches.match('./index.html');
         }

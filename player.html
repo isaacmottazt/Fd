@@ -12,10 +12,10 @@
     <link rel="stylesheet" href="biblioteca.css">
     <link rel="stylesheet" href="perfil.css">
     <style>
-    /* Grid de artistas — 3 colunas verticais (top 3 e todos) */
+    /* Garante grid 3 colunas independente de cache do browser */
     .lib-artists-top { display: grid !important; grid-template-columns: repeat(3,1fr) !important; }
     .lib-artists-top-row2 { display: contents !important; }
-    .lib-top-artist-card { flex-direction: column !important; align-items: center !important; text-align: center !important; justify-content: center !important; }
+    .lib-top-artist-card { flex-direction: column !important; align-items: center !important; text-align: center !important; }
     .artists-grid-lib { display: grid !important; grid-template-columns: repeat(3,1fr) !important; }
     .artist-card-lib { flex-direction: column !important; align-items: center !important; text-align: center !important; }
     .artist-card-lib-arrow { display: none !important; }
@@ -525,14 +525,130 @@
     <script src="player-music-actions.js"></script>
     <script src="search.js"></script>
     <script>
-        // Registra o service worker para habilitar funcionamento offline (PWA)
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('[SW] Registrado com sucesso:', reg.scope))
-                    .catch(err => console.warn('[SW] Falha ao registrar:', err));
+    // ── Service Worker: registro com controle de atualização ──────────────
+    // O SW novo fica em "waiting" e só ativa quando o usuário pedir,
+    // evitando que o player seja interrompido ao reabrir o app.
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js').then(reg => {
+                console.log('[SW] Registrado:', reg.scope);
+
+                // Guarda referência ao SW em waiting (se já houver um esperando)
+                let pendingSW = reg.waiting;
+
+                // Novo SW entrou em "installing"
+                reg.addEventListener('updatefound', () => {
+                    const newSW = reg.installing;
+                    newSW.addEventListener('statechange', () => {
+                        if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                            // Há uma versão nova esperando — guarda e mostra banner
+                            pendingSW = newSW;
+                            showUpdateBanner(pendingSW);
+                        }
+                    });
+                });
+
+                // Se já havia um SW em waiting ao abrir o app, mostra banner
+                if (pendingSW) showUpdateBanner(pendingSW);
+
+            }).catch(err => console.warn('[SW] Falha ao registrar:', err));
+
+            // Quando o SW ativa (após skipWaiting), recarrega a página
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!refreshing) {
+                    refreshing = true;
+                    window.location.reload();
+                }
             });
+        });
+    }
+
+    // ── Banner de atualização disponível ─────────────────────────────────
+    function showUpdateBanner(sw) {
+        // Só mostra um banner por vez
+        if (document.getElementById('swUpdateBanner')) return;
+
+        const banner = document.createElement('div');
+        banner.id = 'swUpdateBanner';
+        banner.innerHTML = `
+            <span style="flex:1;font-size:13px;font-weight:600;color:rgba(255,255,255,0.9);">
+                Nova versão disponível
+            </span>
+            <button id="swUpdateBtn" style="
+                background:linear-gradient(135deg,#c026d3,#7c3aed);
+                color:#fff;border:none;border-radius:20px;
+                padding:7px 16px;font-size:13px;font-weight:700;
+                cursor:pointer;white-space:nowrap;flex-shrink:0;
+            ">Atualizar</button>
+            <button id="swDismissBtn" style="
+                background:none;border:none;color:rgba(255,255,255,0.4);
+                font-size:20px;cursor:pointer;padding:0 4px;flex-shrink:0;
+                line-height:1;
+            ">×</button>
+        `;
+        Object.assign(banner.style, {
+            position: 'fixed',
+            bottom: '80px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 'calc(100% - 32px)',
+            maxWidth: '448px',
+            background: 'linear-gradient(160deg,rgba(34,26,53,0.97),rgba(18,12,31,0.97))',
+            border: '1px solid rgba(192,132,252,0.3)',
+            borderRadius: '18px',
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            zIndex: '9999',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(12px)',
+            animation: 'swBannerIn 0.28s cubic-bezier(0.2,0.9,0.4,1.1)',
+        });
+
+        // Injeta keyframe se ainda não existir
+        if (!document.getElementById('swBannerStyle')) {
+            const s = document.createElement('style');
+            s.id = 'swBannerStyle';
+            s.textContent = `
+                @keyframes swBannerIn {
+                    from { opacity:0; transform:translateX(-50%) translateY(16px) scale(0.96); }
+                    to   { opacity:1; transform:translateX(-50%) translateY(0)    scale(1); }
+                }
+            `;
+            document.head.appendChild(s);
         }
+
+        document.body.appendChild(banner);
+
+        // Botão Atualizar: manda skipWaiting pro SW e fecha banner
+        document.getElementById('swUpdateBtn').addEventListener('click', () => {
+            sw.postMessage({ type: 'SKIP_WAITING' });
+            banner.remove();
+        });
+
+        // Botão × : descarta (não atualiza agora)
+        document.getElementById('swDismissBtn').addEventListener('click', () => {
+            banner.remove();
+        });
+    }
+
+    // ── Atualização manual (exposta para usar em Settings/Perfil) ─────────
+    window.checkForAppUpdate = function () {
+        if (!('serviceWorker' in navigator)) return;
+        navigator.serviceWorker.getRegistration().then(reg => {
+            if (!reg) return;
+            reg.update().then(() => {
+                if (reg.waiting) {
+                    showUpdateBanner(reg.waiting);
+                } else {
+                    if (typeof showToast === 'function')
+                        showToast('App já está na versão mais recente', 'success');
+                }
+            });
+        });
+    };
     </script>
 </body>
 </html>
