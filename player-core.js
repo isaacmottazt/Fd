@@ -1,3 +1,132 @@
+// ===== PERSISTÊNCIA DE SESSÃO DO PLAYER =====
+// Salva qual música tocava e o tempo exato, restaura ao reabrir o PWA.
+
+const _SESSION_KEY = 'fenda_player_session';
+
+function savePlayerSession() {
+    try {
+        if (!AppState.currentMusicId) return;
+        const audio = document.getElementById('audio');
+        const currentTime = audio ? Math.floor(audio.currentTime) : 0;
+        const session = {
+            musicId:    AppState.currentMusicId,
+            currentTime: currentTime,
+            wasPlaying: AppState.playing,
+            isShuffle:  AppState.isShuffle,
+            isRepeat:   AppState.isRepeat,
+            trackIds:   (AppState.playContext?.trackList || []).map(m => m.id),
+            source:     AppState.playContext?.source     || 'library',
+            playlistId: AppState.playContext?.playlistId || null,
+            savedAt:    Date.now(),
+        };
+        localStorage.setItem(_SESSION_KEY, JSON.stringify(session));
+    } catch (e) { console.warn('[Session] Erro ao salvar:', e); }
+}
+
+async function restorePlayerSession() {
+    try {
+        const raw = localStorage.getItem(_SESSION_KEY);
+        if (!raw) return false;
+        const session = JSON.parse(raw);
+        // Descarta sessões com mais de 24h
+        if (Date.now() - session.savedAt > 86_400_000) {
+            localStorage.removeItem(_SESSION_KEY);
+            return false;
+        }
+        if (!session.musicId) return false;
+
+        const music = AppState.musics.find(m => m.id === session.musicId);
+        if (!music) return false;
+
+        console.log('[Session] Restaurando:', music.title, '@', session.currentTime + 's');
+
+        AppState.isShuffle = session.isShuffle || false;
+        AppState.isRepeat  = session.isRepeat  || false;
+
+        const restoredList = session.trackIds?.length
+            ? session.trackIds.map(id => AppState.musics.find(m => m.id === id)).filter(Boolean)
+            : AppState.musics;
+
+        AppState.playContext = {
+            source:     session.source     || 'library',
+            playlistId: session.playlistId || null,
+            trackList:  restoredList,
+        };
+        AppState.currentMusicId = music.id;
+
+        const audio = document.getElementById('audio');
+        if (!audio) return false;
+
+        let audioUrl = music.src;
+        if (typeof getCachedAudioUrl === 'function') {
+            const cached = await getCachedAudioUrl(music);
+            if (cached) audioUrl = cached;
+        }
+
+        audio.src = audioUrl;
+
+        const targetTime = session.currentTime || 0;
+        if (targetTime > 0) {
+            audio.addEventListener('loadedmetadata', () => {
+                if (targetTime < (audio.duration - 3)) {
+                    audio.currentTime = targetTime;
+                }
+            }, { once: true });
+        }
+
+        // Atualiza UI imediatamente (mini barra aparece)
+        if (typeof updatePlayerVisibility === 'function') updatePlayerVisibility(music);
+        if (typeof updateMediaSession === 'function') updateMediaSession(music);
+
+        // Reconstrói fila
+        if (typeof buildAutoQueue === 'function') {
+            AppState.autoQueue = buildAutoQueue(music.id, restoredList, AppState.isShuffle);
+        }
+
+        // Dá play
+        AppState.playing = true;
+        audio.play()
+            .then(() => {
+                if (typeof updatePlayerUIState === 'function') updatePlayerUIState();
+                console.log('[Session] ▶ Restaurado com sucesso');
+            })
+            .catch(() => {
+                AppState.playing = false;
+                if (typeof updatePlayerUIState === 'function') updatePlayerUIState();
+                console.log('[Session] Autoplay bloqueado — aguardando toque');
+            });
+
+        return true;
+    } catch (e) {
+        console.warn('[Session] Erro ao restaurar:', e);
+        return false;
+    }
+}
+
+function initSessionPersistence() {
+    const audio = document.getElementById('audio');
+    if (!audio) return;
+
+    // Salva assim que começa a tocar
+    audio.addEventListener('play', savePlayerSession);
+
+    // Salva a cada 5s enquanto toca
+    setInterval(() => {
+        if (!audio.paused && AppState.currentMusicId) savePlayerSession();
+    }, 5000);
+
+    // Salva ao ir para background (minimizar o app)
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') savePlayerSession();
+    });
+
+    // Salva ao fechar
+    window.addEventListener('pagehide', savePlayerSession);
+    window.addEventListener('beforeunload', savePlayerSession);
+
+    console.log('[Session] Persistência ativa.');
+}
+
 // ===== ESTADO GLOBAL COM FILA =====
 const AppState = {
     musics: [],
@@ -879,33 +1008,22 @@ async function initApp() {
     if (typeof window.renderQueue === 'function') window.renderQueue();
     if (typeof window.initSearch === 'function') window.initSearch();
 
-    // Inicia persistencia de sessao
-    if (typeof window.initSessionPersistence === 'function') {
-        window.initSessionPersistence();
-    }
+    // Liga persistência de sessão
+    initSessionPersistence();
 
-    // Tenta restaurar a musica que estava tocando
-    const tryRestore = async () => {
-        if (AppState.musics.length === 0) return false;
-        if (typeof window.restorePlayerSession === 'function') {
-            return await window.restorePlayerSession();
-        }
-        return false;
-    };
+    // Tenta restaurar a música imediatamente (cache local)
+    const restored = await restorePlayerSession();
 
-    // Tenta agora (musicas do cache ja disponíveis)
-    const restoredNow = await tryRestore();
-
-    // Se nao conseguiu (sem cache), espera Supabase carregar (ate 8s)
-    if (!restoredNow) {
-        let attempts = 0;
+    // Se não tinha músicas no cache, espera o Supabase carregar (até 8s)
+    if (!restored) {
+        let tries = 0;
         const poll = setInterval(async () => {
-            attempts++;
+            tries++;
             if (AppState.musics.length > 0) {
                 clearInterval(poll);
-                await tryRestore();
+                await restorePlayerSession();
             }
-            if (attempts >= 16) clearInterval(poll);
+            if (tries >= 16) clearInterval(poll);
         }, 500);
     }
 }
