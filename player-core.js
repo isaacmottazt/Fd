@@ -158,17 +158,7 @@ window.loadLocalUserName = loadLocalUserName;
 let playCounts = JSON.parse(localStorage.getItem('play_counts') || '{}');
 function incrementPlayCount(musicId) {
     playCounts[musicId] = (playCounts[musicId] || 0) + 1;
-    _trimPlayCounts();
     localStorage.setItem('play_counts', JSON.stringify(playCounts));
-}
-function _trimPlayCounts() {
-    const entries = Object.entries(playCounts);
-    if (entries.length > 500) {
-        // Mantém os 500 mais tocados
-        playCounts = Object.fromEntries(
-            entries.sort((a, b) => b[1] - a[1]).slice(0, 500)
-        );
-    }
 }
 
 
@@ -669,20 +659,55 @@ function initTabs() {
     const navButtons = document.querySelectorAll('.nav-bar .nav-btn');
     const tabContents = document.querySelectorAll('.main-content .tab-content');
     if (navButtons.length === 0) return;
-    function switchTab(tabId, btn) {
+    const TAB_TITLES = {
+        'inicio':     'Início — Fenda Music',
+        'buscar':     'Busca — Fenda Music',
+        'biblioteca': 'Biblioteca — Fenda Music',
+        'perfil':     'Perfil — Fenda Music',
+    };
+    const PATH_TO_TAB = {
+        '/inicio':     'inicio',
+        '/busca':      'buscar',
+        '/biblioteca': 'biblioteca',
+        '/perfil':     'perfil',
+        '/player':     'inicio',
+        '/':           'inicio',
+    };
+    const TAB_TO_PATH = {
+        'inicio':     '/inicio',
+        'buscar':     '/busca',
+        'biblioteca': '/biblioteca',
+        'perfil':     '/perfil',
+    };
+
+    function switchTab(tabId, btn, updateUrl = true) {
         if (!tabId) return;
         if (typeof window.closePlaylistDetail === 'function') window.closePlaylistDetail();
         navButtons.forEach(b => b.classList.remove('active'));
         tabContents.forEach(t => t.classList.remove('active'));
         if (btn) btn.classList.add('active');
+        if (!btn) {
+            const matchBtn = [...navButtons].find(b => b.getAttribute('data-tab') === tabId);
+            if (matchBtn) matchBtn.classList.add('active');
+        }
         const activeTab = document.getElementById(tabId);
         if (activeTab) activeTab.classList.add('active');
         AppState.currentTab = tabId;
+        if (TAB_TITLES[tabId]) document.title = TAB_TITLES[tabId];
+        if (updateUrl && TAB_TO_PATH[tabId]) {
+            history.pushState({ tab: tabId }, TAB_TITLES[tabId], TAB_TO_PATH[tabId]);
+        }
         if (tabId === 'inicio' && typeof window.renderHome === 'function') window.renderHome();
         if (tabId === 'buscar' && typeof window.initSearch === 'function') window.initSearch();
         if (tabId === 'biblioteca' && typeof window.renderLibrary === 'function') window.renderLibrary();
         if (tabId === 'perfil' && typeof window.renderProfile === 'function') window.renderProfile();
     }
+
+    // Botão Voltar/Avançar do browser navega entre abas
+    window.addEventListener('popstate', (e) => {
+        const tabId = e.state?.tab || PATH_TO_TAB[location.pathname] || 'inicio';
+        switchTab(tabId, null, false);
+    });
     navButtons.forEach(btn => {
         const tabId = btn.getAttribute('data-tab');
         const handler = (e) => { e.preventDefault(); e.stopPropagation(); switchTab(tabId, btn); };
@@ -757,7 +782,10 @@ async function _fetchAllFromSupabase() {
     for (const m of allMusics) { if (!ids.has(m.id)) { ids.add(m.id); uniqueMusics.push(m); } }
     AppState.musics = uniqueMusics;
 
-    // Carrega artistas (sincronização só acontece no upload de música, não no login)
+    // Sincroniza e carrega artistas
+    if (typeof window.syncArtistsFromMusics === 'function') {
+        await window.syncArtistsFromMusics(AppState.musics);
+    }
     AppState.artists = typeof window.loadAllArtists === 'function'
         ? await window.loadAllArtists()
         : [];
@@ -833,6 +861,7 @@ async function _loadAllFromCache() {
     const localUser = loadLocalUserName();
     if (localUser?.name && !AppState.userProfile?.full_name) {
         AppState.userProfile = { ...AppState.userProfile, full_name: localUser.name };
+        localStorage.setItem('user_email', localUser.email || '');
     }
 
     // Músicas baixadas offline
@@ -854,7 +883,13 @@ async function _loadAllFromCache() {
         } catch(e) { console.warn('[Cache] Erro ao carregar músicas offline:', e); }
     }
 
-    console.log('[Cache] Cache carregado — músicas:', AppState.musics.length, '| playlists:', AppState.userPlaylists.length);
+    console.log('[Cache]  Cache carregado:', {
+        músicas: AppState.musics.length,
+        playlists: AppState.userPlaylists.length,
+        favoritos: AppState.favorites.size,
+        histórico: AppState.history.length,
+        nome: AppState.userProfile?.full_name || '(sem nome)'
+    });
 }
 
 // Atualiza silenciosamente em background sem travar a UI
@@ -878,6 +913,21 @@ async function initApp() {
     if (typeof window.renderProfile === 'function') window.renderProfile();
     if (typeof window.renderQueue === 'function') window.renderQueue();
     if (typeof window.initSearch === 'function') window.initSearch();
+
+    // Abre a aba correta baseado na URL atual
+    const PATH_MAP = {
+        '/inicio':     'inicio',
+        '/busca':      'buscar',
+        '/biblioteca': 'biblioteca',
+        '/perfil':     'perfil',
+    };
+    const initialTab = PATH_MAP[location.pathname] || 'inicio';
+    if (initialTab !== 'inicio') {
+        // switchTab já está disponível pois initNavigation foi chamado
+        if (typeof switchTab === 'function') {
+            switchTab(initialTab, null, false);
+        }
+    }
 }
 
 function checkDeepLink() {
@@ -945,30 +995,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    //  PASSO 2: listener de mudança de autenticação
-    // IMPORTANTE: só redireciona em SIGNED_OUT explícito.
-    // Outros eventos (INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED, USER_UPDATED)
-    // são normais durante o fluxo OAuth e NÃO devem causar redirect.
-    supabaseClient.auth.onAuthStateChange((event, session) => {
-        if (event === 'SIGNED_OUT') {
-            window.location.replace('index.html');
-        }
-        if (event === 'TOKEN_REFRESHED') {
-            console.log('[Auth] Token renovado automaticamente');
-        }
-    });
-
-    //  PASSO 3: verifica sessão atual
+    //  PASSO 2: agora verifica sessão em paralelo
     const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
     
     if (sessionError) {
         console.error('Erro ao obter sessão:', sessionError);
-        window.location.replace('index.html');
+        window.location.href = 'login.html';
         return;
     }
     
     if (!session) {
-        window.location.replace('index.html');
+        window.location.href = 'login.html';
         return;
     }
     
@@ -1006,8 +1043,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         email: userEmail,
                         bio: 'Apaixonado por música.',
                         avatar_url: null,
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
+                        created_at: new Date(),
+                        updated_at: new Date()
                     }]);
                 
                 if (insertError) {
@@ -1024,8 +1061,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
-    //  PASSO 3: salva apenas userId no localStorage (mínimo necessário para cache keys)
-    // Email e nome NÃO são armazenados em localStorage por segurança
+    //  PASSO 3: salva userId e email no localStorage para acesso offline
+    localStorage.setItem('user_email', userEmail);
     localStorage.setItem('fenda_userId', AppState.userId);
 
     // Carrega histórico local imediatamente (antes de qualquer chamada de rede)
@@ -1038,6 +1075,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const localUser = loadLocalUserName();
     if (localUser) {
         AppState.userProfile = { full_name: localUser.name, email: localUser.email };
+        localStorage.setItem('user_name', localUser.name);
     }
 
     if (navigator.onLine) {
@@ -1046,6 +1084,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             await ensureProfileExists();
             const profileData = await window.getUserProfile(AppState.userId);
             AppState.userProfile = profileData;
+            localStorage.setItem('user_name', profileData.full_name || userName);
             saveLocalUserName(profileData.full_name || userName, userEmail);
         } catch(e) {
             console.warn('[Cache] Não foi possível carregar perfil online:', e);
