@@ -112,7 +112,7 @@ async function handleSearch() {
             return `
             <div class="search-result-item${isCurrent ? ' is-playing' : ''}" data-type="music" data-id="${m.id}">
                 <div class="result-icon">
-                    ${m.cover ? `<img src="${m.cover}" loading="lazy" onerror="this.remove()">` : ''}
+                    ${m.cover ? `<img src="${typeof sanitizeUrl === 'function' ? sanitizeUrl(m.cover) : (m.cover || '')}" loading="lazy" onerror="this.remove()">` : ''}
                     <span class="material-symbols-rounded">music_note</span>
                 </div>
                 <div class="result-info">
@@ -246,7 +246,7 @@ function renderFeaturedArtists() {
         <div class="search-artist-card" data-artist="${escapeHtml(name)}">
             <div class="search-artist-avatar">
                 ${cover
-                    ? `<img src="${cover}" alt="${escapeHtml(name)}" loading="lazy">`
+                    ? `<img src="${typeof sanitizeUrl === 'function' ? sanitizeUrl(cover) : (cover || '')}" alt="${escapeHtml(name)}" loading="lazy">`
                     : `<span class="material-symbols-rounded">person</span>`}
             </div>
             <span class="search-artist-name">${escapeHtml(name)}</span>
@@ -275,10 +275,16 @@ function debounce(fn, delay) {
     return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
 }
 
-function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+// escapeHtml é definida em player-ui.js que carrega antes
+// Fallback para uso isolado:
+if (typeof window.escapeHtml === 'undefined') {
+    window.escapeHtml = function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+    };
 }
+// Alias local
+const _escHtml = typeof escapeHtml !== 'undefined' ? escapeHtml : window.escapeHtml;
 
 window.initSearch = initSearch;
 window.renderRecentSearches = renderRecentSearches;

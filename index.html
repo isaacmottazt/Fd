@@ -49,7 +49,7 @@
         // Se já tiver sessão ativa, vai direto pro player sem apagar nada
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (session) {
-            window.location.href = 'player.html';
+            window.location.replace('player.html');
             return;
         }
         // Sem sessão: remove apenas tokens do Supabase, preserva cache do app (fenda_cache_*)
@@ -133,6 +133,26 @@
     <div id="toastContainer" class="toast-container"></div>
 
     <script>
+        // Detecta retorno do OAuth (Google redireciona com #access_token na URL)
+        (async () => {
+            const hash = window.location.hash;
+            if (hash && (hash.includes('access_token') || hash.includes('error'))) {
+                // Supabase processa o hash automaticamente via getSession()
+                const { data: { session }, error } = await supabaseClient.auth.getSession();
+                if (session) {
+                    // Limpa o hash da URL e vai para o player
+                    window.location.replace('player.html');
+                    return;
+                }
+                if (error || hash.includes('error')) {
+                    const params = new URLSearchParams(hash.replace('#', ''));
+                    const msg = params.get('error_description') || 'Erro no login com Google';
+                    // Remove hash e mostra erro
+                    history.replaceState(null, '', window.location.pathname);
+                }
+            }
+        })();
+
         function showToast(message, type = 'success') {
             const container = document.getElementById('toastContainer');
             if (!container) return;
@@ -186,7 +206,7 @@
         document.getElementById('googleLoginBtn').addEventListener('click', async () => {
             const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
-                options: { redirectTo: 'https://fendamusic.com.br/player.html' }
+                options: { redirectTo: 'https://fendamusic.com.br/index.html' }
             });
             if (error) showToast(error.message, 'danger');
         });
@@ -215,9 +235,7 @@
                         .select('full_name')
                         .eq('id', data.user.id)
                         .single();
-                    localStorage.setItem('user_name', profile?.full_name || email.split('@')[0]);
-                    localStorage.setItem('user_email', email);
-                    window.location.href = 'player.html';
+                    window.location.replace('player.html');
                 } else {
                     showToast('Por favor, verifique seu e-mail antes de fazer login.', 'warning');
                     await supabaseClient.auth.signOut();
@@ -313,7 +331,7 @@
         // Verifica se já está logado (redireciona)
         (async () => {
             const { data: { session } } = await supabaseClient.auth.getSession();
-            if (session) window.location.href = 'player.html';
+            if (session) window.location.replace('player.html');
         })();
 
         // Registra o service worker para habilitar funcionamento offline (PWA)

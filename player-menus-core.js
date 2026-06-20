@@ -187,7 +187,7 @@ function openContextMenu(music) {
 
     menu.innerHTML = `
         <div class="ctx-header">
-            <img class="ctx-cover" src="${music.cover || ''}" onerror="this.style.display='none'">
+            <img class="ctx-cover" src="${typeof sanitizeUrl === 'function' ? sanitizeUrl(music.cover) : (music.cover || '')}" onerror="this.style.display='none'">
             <div class="ctx-header-info">
                 <span class="ctx-title">${escapeHtml(music.title)}</span>
                 <span class="ctx-artist">${escapeHtml(music.artist)}</span>
@@ -471,7 +471,7 @@ function renderQueuePanel() {
         const item = document.createElement('div');
         item.className = 'queue-panel-item';
         item.innerHTML = `
-            <img src="${music.cover || 'https://via.placeholder.com/48'}" class="queue-panel-cover">
+            <img src="${typeof sanitizeUrl === 'function' ? sanitizeUrl(music.cover) : (music.cover || '')}" class="queue-panel-cover">
             <div class="queue-panel-info">
                 <p class="queue-panel-title">${escapeHtml(music.title)}</p>
                 <p class="queue-panel-artist">${escapeHtml(music.artist)}</p>

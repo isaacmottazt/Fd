@@ -120,17 +120,10 @@ async function saveMusicToSupabase(musicData) {
 }
 
 async function deleteMusicFromSupabase(musicId) {
-    try {
-        const { error } = await supabaseClient
-            .from('musics')
-            .delete()
-            .eq('id', musicId);
-        if (error) throw error;
-        return true;
-    } catch (e) {
-        console.error('deleteMusicFromSupabase:', e);
-        return false;
-    }
+    // Músicas são gerenciadas apenas pelo admin via Supabase Dashboard.
+    // RLS bloqueia DELETE para usuários autenticados na tabela musics.
+    console.warn('deleteMusicFromSupabase: operação bloqueada por RLS — apenas admin pode deletar músicas');
+    return false;
 }
 
 // ========== UPLOAD DE ARQUIVOS ==========

@@ -51,7 +51,7 @@ function renderHome() {
         const recentMusics = AppState.history.slice(0, 6).map(item => AppState.musics.find(m => m.id === item.id)).filter(m => m);
         recentContainer.innerHTML = recentMusics.map(music => `
             <div class="music-card-horizontal" data-id="${music.id}">
-                <img src="${music.cover || 'https://via.placeholder.com/150'}" loading="lazy">
+                <img src="${sanitizeUrl(music.cover)}" loading="lazy">
                 <h4>${escapeHtml(music.title)}</h4>
                 <p>${escapeHtml(music.artist)}</p>
             </div>
@@ -98,7 +98,7 @@ function renderHome() {
                 return `
                     <div class="artist-card" data-artist="${escapeHtml(artist)}">
                         <div class="artist-avatar">
-                            ${cover ? `<img src="${cover}" onerror="this.style.display='none'" loading="lazy">` : ''}
+                            ${cover ? `<img src="${sanitizeUrl(cover)}" onerror="this.style.display='none'" loading="lazy">` : ''}
                             <span class="material-symbols-rounded" ${cover ? 'style="display:none"' : ''}>person</span>
                         </div>
                         <p>${escapeHtml(artist)}</p>
@@ -137,7 +137,7 @@ function renderHome() {
             <div class="carousel-track" id="newestCarouselTrack">
                 ${newest.map(music => `
                     <div class="music-card-horizontal newest-card" data-id="${music.id}">
-                        <img src="${music.cover || 'https://via.placeholder.com/150'}" loading="lazy">
+                        <img src="${sanitizeUrl(music.cover)}" loading="lazy">
                         <h4>${escapeHtml(music.title)}</h4>
                         <p>${escapeHtml(music.artist)}</p>
                     </div>
@@ -322,7 +322,7 @@ async function renderArtistsGrid() {
             }
 
             const rankHtml = `<span class="lib-top-artist-rank ${rankClasses[i]}">${rankIcons[i] ? `<span class="material-symbols-rounded">${rankIcons[i]}</span>` : ''}${rankLabels[i]}</span>`;
-            const avatarHtml = `<div class="lib-top-artist-avatar">${cover ? `<img src="${cover}" onerror="this.style.display='none'">` : ''}<span class="material-symbols-rounded artist-avatar-fallback">person</span></div>`;
+            const avatarHtml = `<div class="lib-top-artist-avatar">${cover ? `<img src="${sanitizeUrl(cover)}" onerror="this.style.display='none'">` : ''}<span class="material-symbols-rounded artist-avatar-fallback">person</span></div>`;
             const playsHtml = `<span class="lib-top-artist-plays"><span class="material-symbols-rounded">play_arrow</span>${plays} plays</span>`;
 
             // Todos os 3 cards: layout vertical centralizado, igual
@@ -370,7 +370,7 @@ async function renderArtistsGrid() {
         const trackCount = trackCountByArtist.get(a.name) || 0;
         card.innerHTML = `
             <div class="artist-avatar-lib">
-                ${cover ? `<img src="${cover}" onerror="this.style.display='none'">` : ''}
+                ${cover ? `<img src="${sanitizeUrl(cover)}" onerror="this.style.display='none'">` : ''}
                 <span class="material-symbols-rounded artist-avatar-fallback">person</span>
             </div>
             <div class="artist-card-lib-info">
@@ -424,49 +424,43 @@ function openArtistDetail(artistName) {
                     <span class="material-symbols-rounded${isFav ? ' filled' : ''}">favorite</span>
                 </button>
             </div>
-        </div>
-        <div class="artist-detail-info">
-            <div class="artist-detail-avatar">
-                ${cover ? `<img src="${cover}">` : '<span class="material-symbols-rounded">person</span>'}
-            </div>
-            <div class="artist-detail-title-block">
+            <div class="artist-detail-info">
+                <div class="artist-detail-avatar">
+                    ${cover ? `<img src="${sanitizeUrl(cover)}">` : '<span class="material-symbols-rounded">person</span>'}
+                </div>
                 ${isVerified ? `<span class="artist-verified-badge"><span class="material-symbols-rounded">verified</span>Artista</span>` : ''}
                 <h2>${escapeHtml(artistName)}</h2>
-                <p>${artistMusics.length} ${artistMusics.length === 1 ? 'música' : 'músicas'}${totalPlays > 0 ? ` · ${totalPlays.toLocaleString('pt-BR')} play${totalPlays !== 1 ? 's' : ''}` : ''}</p>
+                <p>${artistMusics.length} ${artistMusics.length === 1 ? 'música' : 'músicas'}${totalPlays > 0 ? ` · ${totalPlays} play${totalPlays !== 1 ? 's' : ''}` : ''}</p>
             </div>
-        </div>
-        <div class="artist-detail-stats">
-            <div class="artist-stat">
-                <div class="artist-stat-text">
-                    <span class="artist-stat-num">${artistMusics.length}</span>
-                    <span class="artist-stat-label">Músicas</span>
-                </div>
-            </div>
+            ${bio ? `
+            <p class="artist-detail-bio clamped" id="artistBioText">${escapeHtml(bio)}</p>
+            <button class="artist-bio-toggle" id="artistBioToggle">Ver mais</button>
+            ` : ''}
             ${totalPlays > 0 ? `
-            <div class="artist-stat">
-                <div class="artist-stat-text">
-                    <span class="artist-stat-num">${totalPlays.toLocaleString('pt-BR')}</span>
-                    <span class="artist-stat-label">Plays</span>
+            <div class="artist-detail-stats">
+                <div class="artist-stat">
+                    <span class="material-symbols-rounded">play_circle</span>
+                    <div class="artist-stat-text">
+                        <span class="artist-stat-num">${totalPlays}</span>
+                        <span class="artist-stat-label">Plays</span>
+                    </div>
+                </div>
+                <div class="artist-stat">
+                    <span class="material-symbols-rounded">library_music</span>
+                    <div class="artist-stat-text">
+                        <span class="artist-stat-num">${artistMusics.length}</span>
+                        <span class="artist-stat-label">Músicas</span>
+                    </div>
                 </div>
             </div>` : ''}
-            <div class="artist-stat">
-                <div class="artist-stat-text">
-                    <span class="artist-stat-num">${popularTracks.length || artistMusics.length}</span>
-                    <span class="artist-stat-label">Populares</span>
-                </div>
+            <div class="artist-detail-actions">
+                <button class="playlist-play-all-btn" id="artistPlayAll">
+                    <span class="material-symbols-rounded">play_arrow</span> Tocar tudo
+                </button>
+                <button class="playlist-shuffle-btn" id="artistShuffle">
+                    <span class="material-symbols-rounded">shuffle</span> Aleatório
+                </button>
             </div>
-        </div>
-        ${bio ? `
-        <p class="artist-detail-bio clamped" id="artistBioText">${escapeHtml(bio)}</p>
-        <button class="artist-bio-toggle" id="artistBioToggle">Ver mais</button>
-        ` : ''}
-        <div class="artist-detail-actions">
-            <button class="playlist-play-all-btn" id="artistPlayAll">
-                <span class="material-symbols-rounded">play_arrow</span> Tocar tudo
-            </button>
-            <button class="playlist-shuffle-btn" id="artistShuffle">
-                <span class="material-symbols-rounded">shuffle</span>
-            </button>
         </div>
         ${popularTracks.length ? `
         <p class="artist-section-label"><span class="material-symbols-rounded">trending_up</span> Mais tocadas</p>
@@ -523,7 +517,7 @@ function openArtistDetail(artistName) {
                     ? '<span class="eq-bars"><span></span><span></span><span></span></span>'
                     : (idx + 1)}</span>
                 ${music.cover
-                    ? `<img class="artist-music-cover" src="${music.cover}" onerror="this.parentNode.innerHTML='<div class=artist-music-cover-placeholder><span class=material-symbols-rounded>music_note</span></div>' + this.parentNode.innerHTML.replace(this.outerHTML,'')">`
+                    ? `<img class="artist-music-cover" src="${sanitizeUrl(music.cover)}" data-fallback="1">`
                     : `<div class="artist-music-cover-placeholder"><span class="material-symbols-rounded">music_note</span></div>`}
                 <div class="artist-music-info">
                     <span class="artist-music-title">${escapeHtml(music.title)}</span>
@@ -531,6 +525,17 @@ function openArtistDetail(artistName) {
                 </div>
                 <button class="artist-music-more"><span class="material-symbols-rounded">more_vert</span></button>
             `;
+            // Onerror via JS — evita XSS de inline handlers
+            const coverImg = item.querySelector('.artist-music-cover[data-fallback]');
+            if (coverImg) {
+                coverImg.onerror = function() {
+                    const ph = document.createElement('div');
+                    ph.className = 'artist-music-cover-placeholder';
+                    ph.innerHTML = '<span class="material-symbols-rounded">music_note</span>';
+                    if (this.parentNode) this.parentNode.replaceChild(ph, this);
+                };
+            }
+
             item.addEventListener('click', (e) => {
                 if (e.target.closest('.artist-music-more')) return;
                 if (typeof window.setPlayContext === 'function') window.setPlayContext('search', artistMusics);
@@ -621,7 +626,7 @@ function renderLibrary() {
             item.innerHTML = `
                 <div class="playlist-left">
                     <div class="playlist-icon">
-                        ${playlist.cover ? `<img src="${playlist.cover}">` : '<span class="material-symbols-rounded">queue_music</span>'}
+                        ${playlist.cover ? `<img src="${sanitizeUrl(playlist.cover)}">` : '<span class="material-symbols-rounded">queue_music</span>'}
                     </div>
                     <div class="playlist-info">
                         <h4>${escapeHtml(playlist.name)}</h4>
@@ -667,7 +672,7 @@ function renderLibrary() {
             if (!music) return;
             const card = document.createElement('div');
             card.className = 'history-card';
-            card.innerHTML = `<img src="${music.cover || ''}" loading="lazy"><h4>${escapeHtml(music.title)}</h4><p>${escapeHtml(music.artist)}</p>`;
+            card.innerHTML = `<img src="${sanitizeUrl(music.cover)}" loading="lazy"><h4>${escapeHtml(music.title)}</h4><p>${escapeHtml(music.artist)}</p>`;
             card.addEventListener('click', () => playMusicTrack(music));
             hGrid.appendChild(card);
         });
@@ -916,7 +921,7 @@ async function createMusicCardElement(music) {
             <button class="inline-play-btn ${isCurrent ? 'active-inline' : ''}" data-id="${music.id}">
                 <span class="material-symbols-rounded">${inlineIcon}</span>
             </button>
-            <img src="${music.cover || ''}" class="music-card-cover" onerror="this.style.opacity='0'">
+            <img src="${sanitizeUrl(music.cover)}" class="music-card-cover" onerror="this.style.opacity='0'">
             <div class="music-card-details">
                 <h3>${escapeHtml(music.title)}</h3>
                 <p>${escapeHtml(music.artist)}</p>
@@ -1033,6 +1038,15 @@ async function toggleFavoriteTrack(musicId) {
             });
         }
     } catch(e) { console.warn('Erro ao sincronizar favorito:', e); }
+}
+
+function sanitizeUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    const trimmed = url.trim();
+    if (trimmed.startsWith('https://') || trimmed.startsWith('http://') || trimmed.startsWith('blob:')) {
+        return trimmed;
+    }
+    return ''; // rejeita javascript:, data:, etc.
 }
 
 function escapeHtml(str) {

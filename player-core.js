@@ -1,132 +1,3 @@
-// ===== PERSISTÊNCIA DE SESSÃO DO PLAYER =====
-// Salva qual música tocava e o tempo exato, restaura ao reabrir o PWA.
-
-const _SESSION_KEY = 'fenda_player_session';
-
-function savePlayerSession() {
-    try {
-        if (!AppState.currentMusicId) return;
-        const audio = document.getElementById('audio');
-        const currentTime = audio ? Math.floor(audio.currentTime) : 0;
-        const session = {
-            musicId:    AppState.currentMusicId,
-            currentTime: currentTime,
-            wasPlaying: AppState.playing,
-            isShuffle:  AppState.isShuffle,
-            isRepeat:   AppState.isRepeat,
-            trackIds:   (AppState.playContext?.trackList || []).map(m => m.id),
-            source:     AppState.playContext?.source     || 'library',
-            playlistId: AppState.playContext?.playlistId || null,
-            savedAt:    Date.now(),
-        };
-        localStorage.setItem(_SESSION_KEY, JSON.stringify(session));
-    } catch (e) { console.warn('[Session] Erro ao salvar:', e); }
-}
-
-async function restorePlayerSession() {
-    try {
-        const raw = localStorage.getItem(_SESSION_KEY);
-        if (!raw) return false;
-        const session = JSON.parse(raw);
-        // Descarta sessões com mais de 24h
-        if (Date.now() - session.savedAt > 86_400_000) {
-            localStorage.removeItem(_SESSION_KEY);
-            return false;
-        }
-        if (!session.musicId) return false;
-
-        const music = AppState.musics.find(m => m.id === session.musicId);
-        if (!music) return false;
-
-        console.log('[Session] Restaurando:', music.title, '@', session.currentTime + 's');
-
-        AppState.isShuffle = session.isShuffle || false;
-        AppState.isRepeat  = session.isRepeat  || false;
-
-        const restoredList = session.trackIds?.length
-            ? session.trackIds.map(id => AppState.musics.find(m => m.id === id)).filter(Boolean)
-            : AppState.musics;
-
-        AppState.playContext = {
-            source:     session.source     || 'library',
-            playlistId: session.playlistId || null,
-            trackList:  restoredList,
-        };
-        AppState.currentMusicId = music.id;
-
-        const audio = document.getElementById('audio');
-        if (!audio) return false;
-
-        let audioUrl = music.src;
-        if (typeof getCachedAudioUrl === 'function') {
-            const cached = await getCachedAudioUrl(music);
-            if (cached) audioUrl = cached;
-        }
-
-        audio.src = audioUrl;
-
-        const targetTime = session.currentTime || 0;
-        if (targetTime > 0) {
-            audio.addEventListener('loadedmetadata', () => {
-                if (targetTime < (audio.duration - 3)) {
-                    audio.currentTime = targetTime;
-                }
-            }, { once: true });
-        }
-
-        // Atualiza UI imediatamente (mini barra aparece)
-        if (typeof updatePlayerVisibility === 'function') updatePlayerVisibility(music);
-        if (typeof updateMediaSession === 'function') updateMediaSession(music);
-
-        // Reconstrói fila
-        if (typeof buildAutoQueue === 'function') {
-            AppState.autoQueue = buildAutoQueue(music.id, restoredList, AppState.isShuffle);
-        }
-
-        // Dá play
-        AppState.playing = true;
-        audio.play()
-            .then(() => {
-                if (typeof updatePlayerUIState === 'function') updatePlayerUIState();
-                console.log('[Session] ▶ Restaurado com sucesso');
-            })
-            .catch(() => {
-                AppState.playing = false;
-                if (typeof updatePlayerUIState === 'function') updatePlayerUIState();
-                console.log('[Session] Autoplay bloqueado — aguardando toque');
-            });
-
-        return true;
-    } catch (e) {
-        console.warn('[Session] Erro ao restaurar:', e);
-        return false;
-    }
-}
-
-function initSessionPersistence() {
-    const audio = document.getElementById('audio');
-    if (!audio) return;
-
-    // Salva assim que começa a tocar
-    audio.addEventListener('play', savePlayerSession);
-
-    // Salva a cada 5s enquanto toca
-    setInterval(() => {
-        if (!audio.paused && AppState.currentMusicId) savePlayerSession();
-    }, 5000);
-
-    // Salva ao ir para background (minimizar o app)
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') savePlayerSession();
-    });
-
-    // Salva ao fechar
-    window.addEventListener('pagehide', savePlayerSession);
-    window.addEventListener('beforeunload', savePlayerSession);
-
-    console.log('[Session] Persistência ativa.');
-}
-
 // ===== ESTADO GLOBAL COM FILA =====
 const AppState = {
     musics: [],
@@ -287,7 +158,17 @@ window.loadLocalUserName = loadLocalUserName;
 let playCounts = JSON.parse(localStorage.getItem('play_counts') || '{}');
 function incrementPlayCount(musicId) {
     playCounts[musicId] = (playCounts[musicId] || 0) + 1;
+    _trimPlayCounts();
     localStorage.setItem('play_counts', JSON.stringify(playCounts));
+}
+function _trimPlayCounts() {
+    const entries = Object.entries(playCounts);
+    if (entries.length > 500) {
+        // Mantém os 500 mais tocados
+        playCounts = Object.fromEntries(
+            entries.sort((a, b) => b[1] - a[1]).slice(0, 500)
+        );
+    }
 }
 
 
@@ -876,10 +757,7 @@ async function _fetchAllFromSupabase() {
     for (const m of allMusics) { if (!ids.has(m.id)) { ids.add(m.id); uniqueMusics.push(m); } }
     AppState.musics = uniqueMusics;
 
-    // Sincroniza e carrega artistas
-    if (typeof window.syncArtistsFromMusics === 'function') {
-        await window.syncArtistsFromMusics(AppState.musics);
-    }
+    // Carrega artistas (sincronização só acontece no upload de música, não no login)
     AppState.artists = typeof window.loadAllArtists === 'function'
         ? await window.loadAllArtists()
         : [];
@@ -955,7 +833,6 @@ async function _loadAllFromCache() {
     const localUser = loadLocalUserName();
     if (localUser?.name && !AppState.userProfile?.full_name) {
         AppState.userProfile = { ...AppState.userProfile, full_name: localUser.name };
-        localStorage.setItem('user_email', localUser.email || '');
     }
 
     // Músicas baixadas offline
@@ -977,13 +854,7 @@ async function _loadAllFromCache() {
         } catch(e) { console.warn('[Cache] Erro ao carregar músicas offline:', e); }
     }
 
-    console.log('[Cache]  Cache carregado:', {
-        músicas: AppState.musics.length,
-        playlists: AppState.userPlaylists.length,
-        favoritos: AppState.favorites.size,
-        histórico: AppState.history.length,
-        nome: AppState.userProfile?.full_name || '(sem nome)'
-    });
+    console.log('[Cache] Cache carregado — músicas:', AppState.musics.length, '| playlists:', AppState.userPlaylists.length);
 }
 
 // Atualiza silenciosamente em background sem travar a UI
@@ -1007,25 +878,6 @@ async function initApp() {
     if (typeof window.renderProfile === 'function') window.renderProfile();
     if (typeof window.renderQueue === 'function') window.renderQueue();
     if (typeof window.initSearch === 'function') window.initSearch();
-
-    // Liga persistência de sessão
-    initSessionPersistence();
-
-    // Tenta restaurar a música imediatamente (cache local)
-    const restored = await restorePlayerSession();
-
-    // Se não tinha músicas no cache, espera o Supabase carregar (até 8s)
-    if (!restored) {
-        let tries = 0;
-        const poll = setInterval(async () => {
-            tries++;
-            if (AppState.musics.length > 0) {
-                clearInterval(poll);
-                await restorePlayerSession();
-            }
-            if (tries >= 16) clearInterval(poll);
-        }, 500);
-    }
 }
 
 function checkDeepLink() {
@@ -1093,17 +945,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    //  PASSO 2: agora verifica sessão em paralelo
+    //  PASSO 2: listener de mudança de autenticação
+    // IMPORTANTE: só redireciona em SIGNED_OUT explícito.
+    // Outros eventos (INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED, USER_UPDATED)
+    // são normais durante o fluxo OAuth e NÃO devem causar redirect.
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') {
+            window.location.replace('index.html');
+        }
+        if (event === 'TOKEN_REFRESHED') {
+            console.log('[Auth] Token renovado automaticamente');
+        }
+    });
+
+    //  PASSO 3: verifica sessão atual
     const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
     
     if (sessionError) {
         console.error('Erro ao obter sessão:', sessionError);
-        window.location.href = 'login.html';
+        window.location.replace('index.html');
         return;
     }
     
     if (!session) {
-        window.location.href = 'login.html';
+        window.location.replace('index.html');
         return;
     }
     
@@ -1141,8 +1006,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         email: userEmail,
                         bio: 'Apaixonado por música.',
                         avatar_url: null,
-                        created_at: new Date(),
-                        updated_at: new Date()
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
                     }]);
                 
                 if (insertError) {
@@ -1159,8 +1024,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
-    //  PASSO 3: salva userId e email no localStorage para acesso offline
-    localStorage.setItem('user_email', userEmail);
+    //  PASSO 3: salva apenas userId no localStorage (mínimo necessário para cache keys)
+    // Email e nome NÃO são armazenados em localStorage por segurança
     localStorage.setItem('fenda_userId', AppState.userId);
 
     // Carrega histórico local imediatamente (antes de qualquer chamada de rede)
@@ -1173,7 +1038,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const localUser = loadLocalUserName();
     if (localUser) {
         AppState.userProfile = { full_name: localUser.name, email: localUser.email };
-        localStorage.setItem('user_name', localUser.name);
     }
 
     if (navigator.onLine) {
@@ -1182,7 +1046,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             await ensureProfileExists();
             const profileData = await window.getUserProfile(AppState.userId);
             AppState.userProfile = profileData;
-            localStorage.setItem('user_name', profileData.full_name || userName);
             saveLocalUserName(profileData.full_name || userName, userEmail);
         } catch(e) {
             console.warn('[Cache] Não foi possível carregar perfil online:', e);
