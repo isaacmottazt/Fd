@@ -304,35 +304,45 @@ async function renderArtistsGrid() {
         topLabel.innerHTML = `<span class="material-symbols-rounded">local_fire_department</span> Mais ouvidos`;
         grid.appendChild(topLabel);
 
-        const topRow = document.createElement('div');
-        topRow.className = 'lib-artists-top';
+        const topWrap = document.createElement('div');
+        topWrap.className = 'lib-artists-top';
+
         const rankClasses = ['gold', 'silver', 'bronze'];
+        const rankIcons   = ['workspace_premium', null, null];
         const rankLabels  = ['#1', '#2', '#3'];
+
         top3.forEach(({ name, plays }, i) => {
             const cover = AppState.musics.find(m => m.artist === name)?.cover || '';
+
             const card = document.createElement('div');
-            card.className = `lib-top-artist-card${i === 0 ? ' rank-1' : ''}`;
+            card.className = `lib-top-artist-card rank-${i + 1}`;
             if (cover) {
                 card.setAttribute('data-cover', '1');
                 card.style.setProperty('--lib-top-bg', `url(${cover})`);
             }
+
+            const rankHtml = `<span class="lib-top-artist-rank ${rankClasses[i]}">${rankIcons[i] ? `<span class="material-symbols-rounded">${rankIcons[i]}</span>` : ''}${rankLabels[i]}</span>`;
+            const avatarHtml = `<div class="lib-top-artist-avatar">${cover ? `<img src="${cover}" onerror="this.style.display='none'">` : ''}<span class="material-symbols-rounded artist-avatar-fallback">person</span></div>`;
+            const playsHtml = `<span class="lib-top-artist-plays"><span class="material-symbols-rounded">play_arrow</span>${plays} plays</span>`;
+
+            // Todos os 3 cards: layout vertical centralizado, igual
             card.innerHTML = `
-                <span class="lib-top-artist-rank ${rankClasses[i]}">${i === 0 ? '<span class="material-symbols-rounded">workspace_premium</span>' : ''}${rankLabels[i]}</span>
-                <div class="lib-top-artist-avatar">
-                    ${cover ? `<img src="${cover}" onerror="this.style.display='none'">` : ''}
-                    <span class="material-symbols-rounded artist-avatar-fallback">person</span>
+                ${rankHtml}
+                ${avatarHtml}
+                <div class="lib-top-artist-info">
+                    <span class="lib-top-artist-name">${escapeHtml(name)}</span>
+                    ${playsHtml}
                 </div>
-                <span class="lib-top-artist-name">${escapeHtml(name)}</span>
-                <span class="lib-top-artist-plays"><span class="material-symbols-rounded">play_arrow</span>${plays}</span>
             `;
+            topWrap.appendChild(card);
             card.addEventListener('click', () => openArtistDetail(name));
-            topRow.appendChild(card);
         });
-        grid.appendChild(topRow);
+
+        grid.appendChild(topWrap);
 
         const divider = document.createElement('p');
         divider.className = 'artists-divider-label';
-        divider.innerHTML = `<span class="material-symbols-rounded">apps</span> Todos os artistas`;
+        divider.innerHTML = `<span class="material-symbols-rounded">people</span> Todos os artistas`;
         grid.appendChild(divider);
     }
 
@@ -363,8 +373,11 @@ async function renderArtistsGrid() {
                 ${cover ? `<img src="${cover}" onerror="this.style.display='none'">` : ''}
                 <span class="material-symbols-rounded artist-avatar-fallback">person</span>
             </div>
-            <span class="artist-name-lib">${escapeHtml(a.name)}</span>
-            <span class="artist-tracks-lib">${trackCount} ${trackCount === 1 ? 'música' : 'músicas'}</span>
+            <div class="artist-card-lib-info">
+                <span class="artist-name-lib">${escapeHtml(a.name)}</span>
+                <span class="artist-tracks-lib">${trackCount} ${trackCount === 1 ? 'música' : 'músicas'}</span>
+            </div>
+            <span class="artist-card-lib-arrow"><span class="material-symbols-rounded">chevron_right</span></span>
         `;
         card.addEventListener('click', () => openArtistDetail(a.name));
         allGrid.appendChild(card);
@@ -411,43 +424,49 @@ function openArtistDetail(artistName) {
                     <span class="material-symbols-rounded${isFav ? ' filled' : ''}">favorite</span>
                 </button>
             </div>
-            <div class="artist-detail-info">
-                <div class="artist-detail-avatar">
-                    ${cover ? `<img src="${cover}">` : '<span class="material-symbols-rounded">person</span>'}
-                </div>
+        </div>
+        <div class="artist-detail-info">
+            <div class="artist-detail-avatar">
+                ${cover ? `<img src="${cover}">` : '<span class="material-symbols-rounded">person</span>'}
+            </div>
+            <div class="artist-detail-title-block">
                 ${isVerified ? `<span class="artist-verified-badge"><span class="material-symbols-rounded">verified</span>Artista</span>` : ''}
                 <h2>${escapeHtml(artistName)}</h2>
-                <p>${artistMusics.length} ${artistMusics.length === 1 ? 'música' : 'músicas'}${totalPlays > 0 ? ` · ${totalPlays} play${totalPlays !== 1 ? 's' : ''}` : ''}</p>
+                <p>${artistMusics.length} ${artistMusics.length === 1 ? 'música' : 'músicas'}${totalPlays > 0 ? ` · ${totalPlays.toLocaleString('pt-BR')} play${totalPlays !== 1 ? 's' : ''}` : ''}</p>
             </div>
-            ${bio ? `
-            <p class="artist-detail-bio clamped" id="artistBioText">${escapeHtml(bio)}</p>
-            <button class="artist-bio-toggle" id="artistBioToggle">Ver mais</button>
-            ` : ''}
-            ${totalPlays > 0 ? `
-            <div class="artist-detail-stats">
-                <div class="artist-stat">
-                    <span class="material-symbols-rounded">play_circle</span>
-                    <div class="artist-stat-text">
-                        <span class="artist-stat-num">${totalPlays}</span>
-                        <span class="artist-stat-label">Plays</span>
-                    </div>
+        </div>
+        <div class="artist-detail-stats">
+            <div class="artist-stat">
+                <div class="artist-stat-text">
+                    <span class="artist-stat-num">${artistMusics.length}</span>
+                    <span class="artist-stat-label">Músicas</span>
                 </div>
-                <div class="artist-stat">
-                    <span class="material-symbols-rounded">library_music</span>
-                    <div class="artist-stat-text">
-                        <span class="artist-stat-num">${artistMusics.length}</span>
-                        <span class="artist-stat-label">Músicas</span>
-                    </div>
+            </div>
+            ${totalPlays > 0 ? `
+            <div class="artist-stat">
+                <div class="artist-stat-text">
+                    <span class="artist-stat-num">${totalPlays.toLocaleString('pt-BR')}</span>
+                    <span class="artist-stat-label">Plays</span>
                 </div>
             </div>` : ''}
-            <div class="artist-detail-actions">
-                <button class="playlist-play-all-btn" id="artistPlayAll">
-                    <span class="material-symbols-rounded">play_arrow</span> Tocar tudo
-                </button>
-                <button class="playlist-shuffle-btn" id="artistShuffle">
-                    <span class="material-symbols-rounded">shuffle</span> Aleatório
-                </button>
+            <div class="artist-stat">
+                <div class="artist-stat-text">
+                    <span class="artist-stat-num">${popularTracks.length || artistMusics.length}</span>
+                    <span class="artist-stat-label">Populares</span>
+                </div>
             </div>
+        </div>
+        ${bio ? `
+        <p class="artist-detail-bio clamped" id="artistBioText">${escapeHtml(bio)}</p>
+        <button class="artist-bio-toggle" id="artistBioToggle">Ver mais</button>
+        ` : ''}
+        <div class="artist-detail-actions">
+            <button class="playlist-play-all-btn" id="artistPlayAll">
+                <span class="material-symbols-rounded">play_arrow</span> Tocar tudo
+            </button>
+            <button class="playlist-shuffle-btn" id="artistShuffle">
+                <span class="material-symbols-rounded">shuffle</span>
+            </button>
         </div>
         ${popularTracks.length ? `
         <p class="artist-section-label"><span class="material-symbols-rounded">trending_up</span> Mais tocadas</p>

@@ -2,7 +2,7 @@
 // Fenda Music — Service Worker v2
 // ============================================================
 
-const CACHE_NAME = 'fenda-music-v2';
+const CACHE_NAME = 'fenda-music-v3';
 
 // Arquivos locais que ficam em cache (shell do app)
 const SHELL_ASSETS = [
@@ -10,6 +10,7 @@ const SHELL_ASSETS = [
   './index.html',
   './player.html',
   './reset-password.html',
+  './manifest.json',
   './base.css',
   './inicio.css',
   './busca.css',
