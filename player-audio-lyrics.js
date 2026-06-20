@@ -142,29 +142,23 @@ function initAudioAndLyricsEngine() {
         });
     }
 
-    // ── Mini barra — todos os listeners via JS ──────────────────────
-    const miniBar      = document.getElementById('playerBottomBar');
+    // ── Mini barra — listeners ──────────────────────────────────────
+    const miniBar       = document.getElementById('playerBottomBar');
     const miniCoverWrap = document.getElementById('miniCoverWrap');
-    const miniInfoArea = document.getElementById('miniInfoArea');
-    const miniPlayBtnInit = document.getElementById('playerBottomPlayBtn');
+    const miniInfoArea  = document.getElementById('miniInfoArea');
+    const miniPlayBtn   = document.getElementById('playerBottomPlayBtn');
+    const miniPrevBtn   = document.getElementById('miniPrevBtnBar');
+    const miniNextBtn   = document.getElementById('miniNextBtnBar');
 
-    // Clique no cover → play/pause (NÃO abre o player)
+    // Cover → abre player expandido
     if (miniCoverWrap) {
         miniCoverWrap.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (typeof window.togglePlayMusic === 'function') window.togglePlayMusic();
+            if (typeof window.expandLyricsScreen === 'function') window.expandLyricsScreen();
         });
     }
 
-    // Clique no play button (filho do cover) → mesma coisa
-    if (miniPlayBtnInit) {
-        miniPlayBtnInit.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (typeof window.togglePlayMusic === 'function') window.togglePlayMusic();
-        });
-    }
-
-    // Clique na info (título/artista) → abre o player expandido
+    // Info → abre player expandido
     if (miniInfoArea) {
         miniInfoArea.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -172,7 +166,31 @@ function initAudioAndLyricsEngine() {
         });
     }
 
-    // Clique no resto da barra (fora do cover e info) → abre o player
+    // Play/Pause
+    if (miniPlayBtn) {
+        miniPlayBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof window.togglePlayMusic === 'function') window.togglePlayMusic();
+        });
+    }
+
+    // Anterior
+    if (miniPrevBtn) {
+        miniPrevBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof window.handlePrevTrack === 'function') window.handlePrevTrack();
+        });
+    }
+
+    // Próxima
+    if (miniNextBtn) {
+        miniNextBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof window.handleNextTrack === 'function') window.handleNextTrack();
+        });
+    }
+
+    // Clique no resto da barra → abre player
     if (miniBar) {
         miniBar.addEventListener('click', () => {
             if (typeof window.expandLyricsScreen === 'function') window.expandLyricsScreen();
@@ -249,7 +267,20 @@ function buildLyricsMarkup() {
     if (_lyricsScrollFrame) { cancelAnimationFrame(_lyricsScrollFrame); _lyricsScrollFrame = null; }
 
     if (AppState.lyricsData.length === 0) {
-        DOM.lyricsContainer.innerHTML = `<div class="lyric-line active" style="text-align:center; padding-top:40px;">Letra Instrumental ou Não Disponível</div>`;
+        const music = AppState.musics.find(m => m.id === AppState.currentMusicId);
+        DOM.lyricsContainer.innerHTML = `
+            <div class="lyrics-unavailable">
+                <span class="material-symbols-rounded">music_note</span>
+                <p>Letra não disponível</p>
+                <span>Esta música não tem letra sincronizada</span>
+                ${music?.title ? `<div class="lyrics-unavailable-music">
+                    <img src="${music.cover || ''}" onerror="this.style.display='none'">
+                    <div>
+                        <b>${music.title}</b>
+                        <small>${music.artist}</small>
+                    </div>
+                </div>` : ''}
+            </div>`;
         return;
     }
 
@@ -352,6 +383,8 @@ function updatePlayerVisibility(music) {
     if (DOM.playerBottomCover) DOM.playerBottomCover.src = music.cover || '';
     if (DOM.playerBottomTitle) DOM.playerBottomTitle.textContent = music.title;
     if (DOM.playerBottomArtist) DOM.playerBottomArtist.textContent = music.artist;
+    // Empurra conteúdo pra cima para não sobrepor cards
+    document.body.classList.add('player-active');
 
     // Player expandido — header
     if (DOM.lyricsTrackTitle) DOM.lyricsTrackTitle.textContent = music.title;

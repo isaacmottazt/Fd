@@ -544,8 +544,12 @@ async function playMusicTrack(music) {
             if (typeof window.updatePlayerVisibility === 'function') window.updatePlayerVisibility(music);
             if (typeof window.updatePlayerUIState === 'function') window.updatePlayerUIState();
             if (typeof window.updateMediaSession === 'function') window.updateMediaSession(music);
-            // Regenera a fila automática se o contexto mudou ou a fila acabou
-            if (AppState.autoQueue.length === 0 && AppState.playContext.trackList.length > 0) {
+            // Se não há contexto de playlist definido, define como 'random' com todas as músicas
+            if (!AppState.playContext.playlistId && AppState.playContext.source !== 'playlist' && AppState.playContext.source !== 'favorites') {
+                if (AppState.autoQueue.length === 0 && AppState.musics.length > 0) {
+                    AppState.autoQueue = buildAutoQueue(music.id, AppState.musics, AppState.isShuffle);
+                }
+            } else if (AppState.autoQueue.length === 0 && AppState.playContext.trackList.length > 0) {
                 AppState.autoQueue = buildAutoQueue(music.id, AppState.playContext.trackList, AppState.isShuffle);
             }
             if (typeof window.renderQueuePanel === 'function') window.renderQueuePanel();
@@ -567,25 +571,58 @@ function togglePlayMusic(music) {
 }
 
 function handleNextTrack() {
-    const next = getNextMusic();
-    if (next) {
+    // 1. Fila manual tem prioridade absoluta
+    if (AppState.queue.length > 0) {
+        const next = AppState.queue.shift();
         if (typeof window.renderQueue === 'function') window.renderQueue();
         if (typeof window.renderQueuePanel === 'function') window.renderQueuePanel();
         playMusicTrack(next);
         return;
     }
-    // Fila vazia: reinicia a fila automática do contexto
-    const { trackList } = AppState.playContext;
-    if (trackList && trackList.length > 0) {
+
+    const { source, trackList } = AppState.playContext;
+    const allMusics = AppState.musics;
+    const isPlaylistCtx = source === 'playlist' || source === 'favorites';
+
+    // 2. Contexto de PLAYLIST: reproduz músicas da playlist
+    if (isPlaylistCtx && trackList && trackList.length > 0) {
+        if (AppState.autoQueue.length > 0) {
+            const nextInPlaylist = AppState.autoQueue.shift();
+            playMusicTrack(nextInPlaylist);
+            return;
+        }
+        // Playlist acabou: continua com músicas aleatórias que NÃO estão na playlist
+        const playlistIds = new Set(trackList.map(m => m.id));
+        const outsideMusics = allMusics.filter(m => !playlistIds.has(m.id));
+        if (outsideMusics.length > 0) {
+            const shuffled = [...outsideMusics].sort(() => Math.random() - 0.5);
+            // Muda contexto para random e toca
+            AppState.playContext = { source: 'random_after_playlist', playlistId: null, trackList: shuffled };
+            AppState.autoQueue = [...shuffled];
+            const nextRandom = AppState.autoQueue.shift();
+            if (nextRandom) { playMusicTrack(nextRandom); return; }
+        }
+        // Fallback: reinicia a playlist do início (loop)
         AppState.autoQueue = buildAutoQueue(AppState.currentMusicId, trackList, AppState.isShuffle);
-        const next2 = AppState.autoQueue.shift();
-        if (next2) { playMusicTrack(next2); return; }
+        const restart = AppState.autoQueue.shift();
+        if (restart) { playMusicTrack(restart); return; }
     }
-    // Fallback: próxima da biblioteca
-    if (AppState.musics.length === 0) return;
-    const currentIdx = AppState.musics.findIndex(m => m.id === AppState.currentMusicId);
-    const nextIndex = (currentIdx + 1) % AppState.musics.length;
-    playMusicTrack(AppState.musics[nextIndex]);
+
+    // 3. Contexto AVULSO (library, search, history, random): músicas aleatórias da biblioteca
+    if (AppState.autoQueue.length > 0) {
+        const nextAuto = AppState.autoQueue.shift();
+        playMusicTrack(nextAuto);
+        return;
+    }
+
+    // 4. Fallback: embaralha tudo novamente e toca
+    if (allMusics.length === 0) return;
+    const otherMusics = allMusics.filter(m => m.id !== AppState.currentMusicId);
+    if (otherMusics.length > 0) {
+        const shuffled = [...otherMusics].sort(() => Math.random() - 0.5);
+        AppState.autoQueue = shuffled;
+        playMusicTrack(shuffled[0]);
+    }
 }
 
 function handlePrevTrack() {
@@ -876,12 +913,12 @@ function calculateTotalMinutesListened() {
 document.addEventListener('DOMContentLoaded', async () => {
 
     //  PASSO 1: inicializa abas e UI imediatamente, sem esperar nada
-    initTabs();
-    initKeyboardShortcuts();
-    if (typeof window.initMenusAndSearch === 'function') window.initMenusAndSearch();
-    if (typeof window.setupPlaylistModal === 'function') window.setupPlaylistModal();
-    if (typeof window.setupPlaylistDetailEvents === 'function') window.setupPlaylistDetailEvents();
-    if (typeof window.initAudioAndLyricsEngine === 'function') window.initAudioAndLyricsEngine();
+    try { initTabs(); } catch (e) { console.error('[Init] initTabs falhou:', e); }
+    try { initKeyboardShortcuts(); } catch (e) { console.error('[Init] initKeyboardShortcuts falhou:', e); }
+    try { if (typeof window.initMenusAndSearch === 'function') window.initMenusAndSearch(); } catch (e) { console.error('[Init] initMenusAndSearch falhou:', e); }
+    try { if (typeof window.setupPlaylistModal === 'function') window.setupPlaylistModal(); } catch (e) { console.error('[Init] setupPlaylistModal falhou:', e); }
+    try { if (typeof window.setupPlaylistDetailEvents === 'function') window.setupPlaylistDetailEvents(); } catch (e) { console.error('[Init] setupPlaylistDetailEvents falhou:', e); }
+    try { if (typeof window.initAudioAndLyricsEngine === 'function') window.initAudioAndLyricsEngine(); } catch (e) { console.error('[Init] initAudioAndLyricsEngine falhou:', e); }
 
     // Configura botão da fila (se existir)
     const queueBtn = document.getElementById('playerBottomQueueBtn');

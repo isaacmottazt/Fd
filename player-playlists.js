@@ -51,8 +51,20 @@ function renderPlaylists() {
 
 async function openPlaylistDetail(playlist) {
     AppState.currentPlaylistFilter = playlist.id;
-    if (DOM.playlistsRootView) DOM.playlistsRootView.style.display = 'none';
-    if (DOM.playlistDetailView) DOM.playlistDetailView.style.display = 'block';
+
+    // Garante que a aba biblioteca está ativa
+    const bibTab = document.getElementById('biblioteca');
+    if (bibTab && !bibTab.classList.contains('active')) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        bibTab.classList.add('active');
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector('.nav-btn[data-tab="biblioteca"]')?.classList.add('active');
+    }
+
+    const rootView = document.getElementById('playlistsRootView');
+    const detailView = document.getElementById('playlistDetailView');
+    if (rootView) rootView.style.display = 'none';
+    if (detailView) { detailView.style.display = 'block'; detailView.style.removeProperty('display'); detailView.style.display = 'block'; }
 
     const titleEl = document.getElementById('playlistDetailName');
     const countEl = document.getElementById('playlistDetailCount');
@@ -124,8 +136,10 @@ async function openPlaylistDetail(playlist) {
 async function openLikedMusicsDetail() {
     AppState.currentPlaylistFilter = 'favorites';
 
-    if (DOM.playlistsRootView) DOM.playlistsRootView.style.display = 'none';
-    if (DOM.playlistDetailView) DOM.playlistDetailView.style.display = 'block';
+    const rootViewFav = document.getElementById('playlistsRootView');
+    const detailViewFav = document.getElementById('playlistDetailView');
+    if (rootViewFav) rootViewFav.style.display = 'none';
+    if (detailViewFav) detailViewFav.style.display = 'block';
 
     const titleEl = document.getElementById('playlistDetailName');
     if (titleEl) titleEl.textContent = "Músicas Curtidas";
@@ -158,8 +172,10 @@ async function openLikedMusicsDetail() {
 
 function closePlaylistDetail() {
     AppState.currentPlaylistFilter = null;
-    if (DOM.playlistsRootView) DOM.playlistsRootView.style.display = 'block';
-    if (DOM.playlistDetailView) DOM.playlistDetailView.style.display = 'none';
+    const rootView3 = document.getElementById('playlistsRootView');
+    const detailView3 = document.getElementById('playlistDetailView');
+    if (rootView3) rootView3.style.display = 'block';
+    if (detailView3) detailView3.style.display = 'none';
     
     renderPlaylists();
     if (typeof window.renderLibrary === 'function') window.renderLibrary();
@@ -168,133 +184,197 @@ function closePlaylistDetail() {
 // ========== MODAL DE CRIAÇÃO/RENOMEAR PLAYLIST (com Supabase) ==========
 function openCreatePlaylistModal() {
     AppState.playlistModalMode = 'create';
+    AppState.selectedPlaylistForMenu = null;
     const modalTitle = document.getElementById('modalPlaylistTitle');
-    if (modalTitle) modalTitle.textContent = "Criar Nova Playlist";
-    if (DOM.newPlaylistName) DOM.newPlaylistName.value = '';
-    if (DOM.playlistModal) DOM.playlistModal.classList.add('active');
-    
-    // Limpa o campo de capa e o nome do arquivo
+    if (modalTitle) modalTitle.textContent = "Nova Playlist";
+    if (DOM.newPlaylistName) {
+        DOM.newPlaylistName.value = '';
+        setTimeout(() => DOM.newPlaylistName.focus(), 200);
+    }
+    // Reset preview de capa
+    const preview = document.getElementById('playlistCoverPreview');
+    if (preview) {
+        preview.innerHTML = `<span class="material-symbols-rounded">add_photo_alternate</span><span class="playlist-modal-cover-hint">Capa</span>`;
+    }
     const coverInput = document.getElementById('playlistCoverFile');
     if (coverInput) coverInput.value = '';
-    const coverFileNameSpan = document.getElementById('coverFileName');
-    if (coverFileNameSpan) coverFileNameSpan.textContent = 'Nenhum arquivo escolhido';
+    if (DOM.playlistModal) DOM.playlistModal.classList.add('active');
 }
 window.openCreatePlaylistModal = openCreatePlaylistModal;
 
 function setupPlaylistModal() {
-    const modal = DOM.playlistModal;
-    const nameInput = DOM.newPlaylistName;
-    const confirmBtn = DOM.confirmModalBtn;
-    const cancelBtn = DOM.cancelModalBtn;
+    const modal = DOM.playlistModal || document.getElementById('playlistModal');
+    const nameInput = DOM.newPlaylistName || document.getElementById('newPlaylistName');
 
-    if (!modal || !nameInput || !confirmBtn || !cancelBtn) {
+    if (!modal || !nameInput) {
         console.warn('Elementos do modal de playlist não encontrados');
         return;
     }
 
-    // Remove listeners antigos (clona para evitar duplicação)
-    const newConfirm = confirmBtn.cloneNode(true);
-    const newCancel = cancelBtn.cloneNode(true);
-    confirmBtn.parentNode.replaceChild(newConfirm, confirmBtn);
-    cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
-    DOM.confirmModalBtn = newConfirm;
-    DOM.cancelModalBtn = newCancel;
+    // Evita registrar a lógica de confirmação mais de uma vez
+    if (window._playlistModalConfirmBound) {
+        // Ainda assim garante os listeners auxiliares (capa, enter, clique fora)
+    } else {
+        window._playlistModalConfirmBound = true;
 
-    newCancel.addEventListener('click', () => {
-        modal.classList.remove('active');
-    });
+        // Delegação de evento no document: funciona mesmo que o botão seja
+        // recriado/clonado por outro trecho do código, pois não depende de
+        // uma referência fixa ao elemento.
+        document.addEventListener('click', async (e) => {
+            const confirmBtn = e.target.closest('#confirmModalBtn');
+            const cancelBtn = e.target.closest('#cancelModalBtn');
 
-    newConfirm.addEventListener('click', async () => {
-        const name = nameInput.value.trim();
-        if (!name) {
-            showToast("Digite um nome para a playlist", "danger");
-            return;
-        }
+            if (cancelBtn) {
+                modal.classList.remove('active');
+                return;
+            }
 
-        let coverUrl = null;
-        const coverFile = document.getElementById('playlistCoverFile').files[0];
-        if (coverFile && typeof window.uploadFileToSupabase === 'function') {
-            try {
-                coverUrl = await window.uploadFileToSupabase(coverFile, `playlist-covers/${AppState.userId || 'anonymous'}`);
-            } catch(e) { console.warn(e); }
-        }
+            if (!confirmBtn) return;
 
-        if (AppState.playlistModalMode === 'create') {
-            const newPlaylist = { 
-                id: Date.now(), 
-                name: name, 
-                musics: [], 
-                cover: coverUrl,
-                user_id: AppState.userId 
-            };
-            if (!AppState.userPlaylists) AppState.userPlaylists = [];
-            AppState.userPlaylists.push(newPlaylist);
-            
-            // Salvar no Supabase
-            if (AppState.userId && typeof window.saveUserPlaylist === 'function') {
-                const saved = await window.saveUserPlaylist({
-                    id: newPlaylist.id,
-                    user_id: AppState.userId,
-                    name: name,
-                    cover: coverUrl,
-                    musics: []
-                });
-                if (!saved) {
-                    showToast("Erro ao salvar playlist no servidor", "danger");
-                    AppState.userPlaylists.pop(); // remove local se falhou
-                    modal.classList.remove('active');
-                    return;
+            const currentNameInput = document.getElementById('newPlaylistName');
+            const name = (currentNameInput?.value || '').trim();
+            if (!name) {
+                if (currentNameInput) {
+                    currentNameInput.focus();
+                    currentNameInput.style.borderColor = '#f87171';
+                    currentNameInput.style.boxShadow = '0 0 0 3px rgba(248,113,113,0.2)';
+                    setTimeout(() => { currentNameInput.style.borderColor = ''; currentNameInput.style.boxShadow = ''; }, 1500);
                 }
+                return;
             }
-            showToast(`Playlist "${name}" criada!`, "success");
-        } 
-        else if (AppState.playlistModalMode === 'rename' && AppState.selectedPlaylistForMenu) {
-            const oldPlaylist = AppState.selectedPlaylistForMenu;
-            oldPlaylist.name = name;
-            if (coverUrl) oldPlaylist.cover = coverUrl;
-            
-            if (AppState.userId && typeof window.saveUserPlaylist === 'function') {
-                await window.saveUserPlaylist({
-                    id: oldPlaylist.id,
-                    user_id: AppState.userId,
-                    name: name,
-                    cover: coverUrl || oldPlaylist.cover,
-                    musics: oldPlaylist.musics || []
-                });
-            }
-            showToast("Playlist atualizada!", "success");
-        }
 
-        // Fallback localStorage
-        await savePlaylists(AppState.userPlaylists);
-        
-        // Atualiza interface
-        if (typeof window.renderLibrary === 'function') window.renderLibrary();
-        if (typeof window.renderPlaylists === 'function') window.renderPlaylists();
-        
-        modal.classList.remove('active');
-        document.getElementById('playlistCoverFile').value = '';
-        document.getElementById('coverFileName').textContent = 'Nenhum arquivo escolhido';
-    });
+            // Fecha o modal IMEDIATAMENTE para feedback instantâneo
+            modal.classList.remove('active');
 
-    // Configura o label de upload de capa
-    const coverInput = document.getElementById('playlistCoverFile');
-    const coverLabel = document.getElementById('playlistCoverLabel');
-    const coverFileNameSpan = document.getElementById('coverFileName');
-    if (coverInput && coverLabel) {
-        coverLabel.addEventListener('click', () => coverInput.click());
-        coverInput.addEventListener('change', () => {
-            if (coverInput.files.length > 0) {
-                coverFileNameSpan.textContent = coverInput.files[0].name;
+            // Feedback visual imediato com toast
+            if (AppState.playlistModalMode === 'create') {
+                showToast(`Playlist "${name}" criada!`, 'success');
             } else {
-                coverFileNameSpan.textContent = 'Nenhum arquivo escolhido';
+                showToast(`Playlist atualizada!`, 'success');
             }
+
+            // Cria/atualiza localmente AGORA (sem esperar upload de capa)
+            let coverUrl = null;
+            const coverFile = document.getElementById('playlistCoverFile')?.files?.[0];
+
+            try {
+                if (AppState.playlistModalMode === 'create') {
+                    const newPlaylist = {
+                        id: Date.now(),
+                        name,
+                        musics: [],
+                        cover: null,  // capa será atualizada depois se houver
+                        user_id: AppState.userId
+                    };
+                    if (!AppState.userPlaylists) AppState.userPlaylists = [];
+                    AppState.userPlaylists.push(newPlaylist);
+
+                    // Atualiza UI imediatamente
+                    if (typeof window.renderLibrary === 'function') window.renderLibrary();
+                    if (typeof window.renderPlaylists === 'function') window.renderPlaylists();
+
+                    // Salva em background (não bloqueia UI)
+                    (async () => {
+                        if (coverFile && typeof window.uploadFileToSupabase === 'function') {
+                            try {
+                                coverUrl = await window.uploadFileToSupabase(coverFile, `playlist-covers/${AppState.userId || 'anonymous'}`);
+                                newPlaylist.cover = coverUrl;
+                            } catch(e) { console.warn(e); }
+                        }
+                        if (AppState.userId && typeof window.saveUserPlaylist === 'function') {
+                            await window.saveUserPlaylist({
+                                id: newPlaylist.id,
+                                user_id: AppState.userId,
+                                name,
+                                cover: coverUrl,
+                                musics: []
+                            });
+                        }
+                        await savePlaylists(AppState.userPlaylists);
+                        if (coverUrl) {
+                            if (typeof window.renderLibrary === 'function') window.renderLibrary();
+                            if (typeof window.renderPlaylists === 'function') window.renderPlaylists();
+                        }
+                    })();
+                }
+                else if (AppState.playlistModalMode === 'rename' && AppState.selectedPlaylistForMenu) {
+                    const oldPlaylist = AppState.selectedPlaylistForMenu;
+                    oldPlaylist.name = name;
+
+                    // Atualiza UI imediatamente
+                    if (typeof window.renderLibrary === 'function') window.renderLibrary();
+                    if (typeof window.renderPlaylists === 'function') window.renderPlaylists();
+
+                    // Salva em background
+                    (async () => {
+                        if (coverFile && typeof window.uploadFileToSupabase === 'function') {
+                            try {
+                                coverUrl = await window.uploadFileToSupabase(coverFile, `playlist-covers/${AppState.userId || 'anonymous'}`);
+                                oldPlaylist.cover = coverUrl;
+                            } catch(e) { console.warn(e); }
+                        }
+                        if (AppState.userId && typeof window.saveUserPlaylist === 'function') {
+                            await window.saveUserPlaylist({
+                                id: oldPlaylist.id,
+                                user_id: AppState.userId,
+                                name,
+                                cover: coverUrl || oldPlaylist.cover,
+                                musics: oldPlaylist.musics || []
+                            });
+                        }
+                        await savePlaylists(AppState.userPlaylists);
+                        if (coverUrl) {
+                            if (typeof window.renderLibrary === 'function') window.renderLibrary();
+                        }
+                    })();
+                }
+            } catch (err) {
+                console.error('[Playlist] Erro ao criar/atualizar playlist:', err);
+                showToast('Não foi possível salvar a playlist', 'danger');
+            }
+
+            // Limpa formulário
+            if (currentNameInput) currentNameInput.value = '';
+            const coverInputEl = document.getElementById('playlistCoverFile');
+            if (coverInputEl) coverInputEl.value = '';
+            const previewEl = document.getElementById('playlistCoverPreview');
+            if (previewEl) previewEl.innerHTML = `<span class="material-symbols-rounded">add_photo_alternate</span><span class="playlist-modal-cover-hint">Capa</span>`;
+        });
+
+        // Enter no campo de nome confirma rapidamente
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            const activeModal = document.getElementById('playlistModal');
+            if (!activeModal || !activeModal.classList.contains('active')) return;
+            if (e.target.id !== 'newPlaylistName') return;
+            document.getElementById('confirmModalBtn')?.click();
+        });
+
+        // Clique fora do conteúdo fecha o modal
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.classList.remove('active');
         });
     }
 
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) modal.classList.remove('active');
-    });
+    // Preview ao escolher capa (pode ser religado com segurança a cada chamada)
+    const coverInput = document.getElementById('playlistCoverFile');
+    const coverPreview = document.getElementById('playlistCoverPreview');
+    if (coverPreview && !coverPreview._boundClick) {
+        coverPreview._boundClick = true;
+        coverPreview.addEventListener('click', () => document.getElementById('playlistCoverFile')?.click());
+    }
+    if (coverInput && !coverInput._boundChange) {
+        coverInput._boundChange = true;
+        coverInput.addEventListener('change', () => {
+            if (coverInput.files.length > 0 && coverPreview) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    coverPreview.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:16px;"><span class="playlist-modal-cover-hint">Trocar</span>`;
+                };
+                reader.readAsDataURL(coverInput.files[0]);
+            }
+        });
+    }
 }
 
 function setupPlaylistDetailEvents() {

@@ -1,4 +1,4 @@
-// ===== ABA BUSCAR — REFORMULADO =====
+// ===== ABA BUSCAR — REDESIGN PREMIUM =====
 
 let searchInput = null;
 let recentSearches = [];
@@ -16,7 +16,7 @@ function initSearch() {
         if (clearBtn) clearBtn.style.display = hasValue ? 'flex' : 'none';
         if (backBtn)  backBtn.style.display  = hasValue ? 'flex' : 'none';
         handleSearch();
-    }, 280));
+    }, 250));
 
     searchInput.addEventListener('keypress', async (e) => {
         if (e.key !== 'Enter') return;
@@ -83,34 +83,50 @@ async function handleSearch() {
 
     let html = '';
 
+    // Artistas — row de pills compactos
     if (allArtists.length) {
-        html += `<div class="search-results-section"><h3>Artistas</h3>`;
-        html += allArtists.map(a => `
-            <div class="search-result-item" data-type="artist" data-artist-name="${escapeHtml(a.name)}">
-                <div class="result-icon circle">${makeAvatar(a.image_url, 'person')}</div>
-                <div class="result-info">
-                    <div class="result-title">${escapeHtml(a.name)}</div>
-                    <div class="result-subtitle">Artista</div>
-                </div>
+        html += `
+        <div class="search-results-section">
+            <h3>Artistas</h3>
+            <div class="search-artists-results-row">
+                ${allArtists.map(a => `
+                    <div class="search-artist-result-pill" data-type="artist" data-artist-name="${escapeHtml(a.name)}">
+                        <div class="search-artist-result-pill-avatar">
+                            ${a.image_url
+                                ? `<img src="${a.image_url}" loading="lazy" onerror="this.remove()">`
+                                : ''}
+                            <span class="material-symbols-rounded">person</span>
+                        </div>
+                        <span class="search-artist-result-pill-name">${escapeHtml(a.name)}</span>
+                    </div>
+                `).join('')}
             </div>
-        `).join('');
-        html += `</div>`;
+        </div>`;
     }
 
+    // Músicas — lista de cards ricos
     if (musicResults.length) {
         html += `<div class="search-results-section"><h3>Músicas</h3>`;
-        html += musicResults.map(m => `
-            <div class="search-result-item" data-type="music" data-id="${m.id}">
-                <div class="result-icon">${makeAvatar(m.cover, 'music_note')}</div>
+        html += musicResults.map(m => {
+            const isCurrent = AppState.currentMusicId === m.id;
+            return `
+            <div class="search-result-item${isCurrent ? ' is-playing' : ''}" data-type="music" data-id="${m.id}">
+                <div class="result-icon">
+                    ${m.cover ? `<img src="${m.cover}" loading="lazy" onerror="this.remove()">` : ''}
+                    <span class="material-symbols-rounded">music_note</span>
+                </div>
                 <div class="result-info">
                     <div class="result-title">${escapeHtml(m.title)}</div>
-                    <div class="result-subtitle">Música • ${escapeHtml(m.artist)}</div>
+                    <div class="result-subtitle">
+                        <span class="result-badge">Música</span>
+                        ${escapeHtml(m.artist)}
+                    </div>
                 </div>
                 <button class="result-more-btn" data-id="${m.id}">
                     <span class="material-symbols-rounded">more_vert</span>
                 </button>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
         html += `</div>`;
     }
 
@@ -119,13 +135,14 @@ async function handleSearch() {
             <div class="search-empty">
                 <span class="material-symbols-rounded">search_off</span>
                 <p>Nenhum resultado</p>
-                <span>Tente buscar por outro nome</span>
+                <span>Tente buscar por outro nome ou artista</span>
             </div>`;
     }
 
     const resultsEl = document.getElementById('searchResults');
     resultsEl.innerHTML = html;
 
+    // Clique em músicas
     resultsEl.querySelectorAll('[data-type="music"]').forEach(el => {
         const id = parseInt(el.dataset.id);
         const music = AppState.musics.find(m => m.id === id);
@@ -135,6 +152,10 @@ async function handleSearch() {
             if (typeof window.setPlayContext === 'function')
                 window.setPlayContext('search', musicResults);
             playMusicTrack(music);
+            // Atualiza estado de playing inline
+            resultsEl.querySelectorAll('.search-result-item').forEach(r => r.classList.remove('is-playing'));
+            el.classList.add('is-playing');
+            el.querySelector('.result-title').style.color = '#b07fff';
         });
         el.querySelector('.result-more-btn')?.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -142,15 +163,20 @@ async function handleSearch() {
         });
     });
 
+    // Clique em artistas (pills)
     resultsEl.querySelectorAll('[data-type="artist"]').forEach(el => {
         const name = el.dataset.artistName;
         el.addEventListener('click', () => {
-            const artistMusics = AppState.musics.filter(m => m.artist === name);
-            if (artistMusics.length) {
-                if (typeof window.setPlayContext === 'function')
-                    window.setPlayContext('search', artistMusics);
-                playMusicTrack(artistMusics[0]);
-            } else showToast('Nenhuma música de ' + name, 'danger');
+            if (typeof window.openArtistDetail === 'function') {
+                window.openArtistDetail(name);
+            } else {
+                const artistMusics = AppState.musics.filter(m => m.artist === name);
+                if (artistMusics.length) {
+                    if (typeof window.setPlayContext === 'function')
+                        window.setPlayContext('search', artistMusics);
+                    playMusicTrack(artistMusics[0]);
+                } else showToast('Nenhuma música de ' + name, 'danger');
+            }
         });
     });
 }
@@ -205,7 +231,6 @@ function renderFeaturedArtists() {
     const section   = document.getElementById('featuredArtistsSection');
     if (!container) return;
 
-    // Coleta artistas únicos com a capa da primeira música
     const artistMap = new Map();
     AppState.musics.forEach(m => {
         if (!artistMap.has(m.artist)) artistMap.set(m.artist, m.cover || '');
@@ -230,16 +255,18 @@ function renderFeaturedArtists() {
 
     container.querySelectorAll('.search-artist-card').forEach(card => {
         card.addEventListener('click', () => {
-            searchInput.value = card.dataset.artist;
-            searchInput.dispatchEvent(new Event('input'));
+            if (typeof window.openArtistDetail === 'function') {
+                window.openArtistDetail(card.dataset.artist);
+            } else {
+                searchInput.value = card.dataset.artist;
+                searchInput.dispatchEvent(new Event('input'));
+            }
         });
     });
 }
 
-// Cria avatar: imagem ou ícone fallback
 function makeAvatar(src, fallbackIcon) {
     if (!src) return `<span class="material-symbols-rounded">${fallbackIcon}</span>`;
-    // Ícone fica por baixo (via CSS position:absolute a imagem cobre)
     return `<span class="material-symbols-rounded">${fallbackIcon}</span><img src="${src}" loading="lazy" onerror="this.remove()">`;
 }
 

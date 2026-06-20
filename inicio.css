@@ -196,53 +196,82 @@
     margin: 0;
 }
 
-/* Grid de artistas (ícones circulares) */
+/* Grid de artistas favoritos — exatamente 3 */
 .artists-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-    gap: 20px;
-    text-align: center;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
 }
 
 .artist-card {
     cursor: pointer;
-    transition: transform 0.2s;
+    transition: transform 0.18s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 22px;
+    padding: 16px 8px 14px;
+    position: relative;
+    overflow: hidden;
+}
+.artist-card::before {
+    content: '';
+    position: absolute;
+    top: -30px; right: -30px;
+    width: 90px; height: 90px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(146,76,255,0.18), transparent);
+    pointer-events: none;
 }
 
-.artist-card:hover {
-    transform: translateY(-5px);
+.artist-card:active {
+    transform: scale(0.95);
+    background: rgba(146,76,255,0.12);
+    border-color: rgba(146,76,255,0.3);
 }
 
 .artist-avatar {
-    width: 80px;
-    height: 80px;
+    width: 72px;
+    height: 72px;
     margin: 0 auto 10px;
-    background: linear-gradient(145deg, #2a1f4a, #0f0b1a);
+    background: linear-gradient(145deg, #2d1a5a, #120a2a);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.3s;
-    border: 2px solid rgba(146, 76, 255, 0.3);
+    transition: all 0.25s;
+    border: 2.5px solid rgba(146, 76, 255, 0.35);
+    overflow: hidden;
+    position: relative;
 }
-
-.artist-card:hover .artist-avatar {
-    border-color: #b07fff;
-    box-shadow: 0 0 15px rgba(146,76,255,0.5);
+.artist-avatar img {
+    width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%;
 }
-
 .artist-avatar span {
-    font-size: 38px;
-    color: #c084fc;
+    font-size: 34px;
+    color: #b07fff;
 }
 
 .artist-card p {
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 12px;
+    font-weight: 700;
     margin: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    width: 100%;
+    text-align: center;
+    color: rgba(255,255,255,0.8);
+    padding: 0 4px;
+}
+.artist-card-plays {
+    font-size: 10px;
+    color: rgba(146,76,255,0.85);
+    font-weight: 600;
+    margin-top: 3px;
 }
 
 /* Grid de playlists */
@@ -308,15 +337,14 @@
         gap: 12px;
     }
     .artists-grid {
-        grid-template-columns: repeat(3, 1fr);
-        gap: 12px;
+        gap: 10px;
     }
     .artist-avatar {
-        width: 65px;
-        height: 65px;
+        width: 60px;
+        height: 60px;
     }
     .artist-avatar span {
-        font-size: 30px;
+        font-size: 28px;
     }
     .section-header h2 {
         font-size: 18px;

@@ -71,21 +71,51 @@ function renderHome() {
 
     const favArtistsContainer = document.getElementById('favoriteArtistsList');
     if (favArtistsContainer) {
-        const favMusics = AppState.musics.filter(m => AppState.favorites.has(m.id));
-        const artistCount = new Map();
-        favMusics.forEach(m => artistCount.set(m.artist, (artistCount.get(m.artist) || 0) + 1));
-        const topArtists = Array.from(artistCount.entries()).sort((a,b) => b[1] - a[1]).slice(0, 6).map(([artist]) => artist);
-        favArtistsContainer.innerHTML = topArtists.map(artist => `
-            <div class="artist-card" data-artist="${escapeHtml(artist)}">
-                <div class="artist-avatar"><span class="material-symbols-rounded">person</span></div>
-                <p>${escapeHtml(artist)}</p>
-            </div>
-        `).join('');
+        // Usa contagem de plays (playCounts) para os 3 artistas mais ouvidos
+        const artistPlays = new Map();
+        AppState.musics.forEach(m => {
+            const plays = playCounts[m.id] || 0;
+            if (plays > 0) {
+                artistPlays.set(m.artist, (artistPlays.get(m.artist) || 0) + plays);
+            }
+        });
+        // Fallback: se não há plays, usa favoritos
+        if (artistPlays.size === 0) {
+            const favMusics = AppState.musics.filter(m => AppState.favorites.has(m.id));
+            favMusics.forEach(m => artistPlays.set(m.artist, (artistPlays.get(m.artist) || 0) + 1));
+        }
+        const topArtists = Array.from(artistPlays.entries())
+            .sort((a,b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([artist, plays]) => ({ artist, plays }));
+
+        if (!topArtists.length) {
+            favArtistsContainer.innerHTML = `<div class="empty-state" style="background:none;padding:20px 0;"><span class="material-symbols-rounded">person</span><p style="font-size:13px;">Ouça músicas para ver seus artistas</p></div>`;
+        } else {
+            favArtistsContainer.innerHTML = topArtists.map(({ artist, plays }) => {
+                const cover = AppState.musics.find(m => m.artist === artist)?.cover || '';
+                const playsText = plays === 1 ? '1 play' : `${plays} plays`;
+                return `
+                    <div class="artist-card" data-artist="${escapeHtml(artist)}">
+                        <div class="artist-avatar">
+                            ${cover ? `<img src="${cover}" onerror="this.style.display='none'" loading="lazy">` : ''}
+                            <span class="material-symbols-rounded" ${cover ? 'style="display:none"' : ''}>person</span>
+                        </div>
+                        <p>${escapeHtml(artist)}</p>
+                        <span class="artist-card-plays">${playsText}</span>
+                    </div>
+                `;
+            }).join('');
+        }
         document.querySelectorAll('.artist-card').forEach(card => {
             card.addEventListener('click', () => {
                 const artist = card.dataset.artist;
-                const artistMusics = AppState.musics.filter(m => m.artist === artist);
-                if (artistMusics.length) playMusicTrack(artistMusics[0]);
+                if (typeof window.openArtistDetail === 'function') {
+                    window.openArtistDetail(artist);
+                } else {
+                    const artistMusics = AppState.musics.filter(m => m.artist === artist);
+                    if (artistMusics.length) playMusicTrack(artistMusics[0]);
+                }
             });
         });
     }
@@ -197,6 +227,21 @@ function renderHome() {
     }
 }
 
+// ========== ARTISTAS: estado de ordenação e favoritos ==========
+let artistsSortMode = 'recent'; // 'recent' (mais ouvidos / padrão) | 'az'
+function _favArtists() {
+    try { return JSON.parse(localStorage.getItem('fenda_fav_artists') || '[]'); }
+    catch { return []; }
+}
+function _isFavArtist(name) { return _favArtists().includes(name); }
+function _toggleFavArtist(name) {
+    const list = _favArtists();
+    const idx = list.indexOf(name);
+    if (idx >= 0) list.splice(idx, 1); else list.unshift(name);
+    localStorage.setItem('fenda_fav_artists', JSON.stringify(list));
+    return idx < 0; // true = acabou de favoritar
+}
+
 // ========== RENDERIZA GRID DE ARTISTAS (BANCO DE DADOS) ==========
 async function renderArtistsGrid() {
     const grid = document.getElementById('artistsGrid');
@@ -212,25 +257,119 @@ async function renderArtistsGrid() {
     }
 
     if (!artists.length) {
-        grid.innerHTML = `<div class="empty-state"><span class="material-symbols-rounded">person</span><p>Nenhum artista</p></div>`;
+        grid.innerHTML = `<div class="empty-state"><span class="material-symbols-rounded">person</span><p>Nenhum artista ainda</p></div>`;
         return;
     }
 
+    // Contagem de músicas por artista
+    const trackCountByArtist = new Map();
+    AppState.musics.forEach(m => {
+        trackCountByArtist.set(m.artist, (trackCountByArtist.get(m.artist) || 0) + 1);
+    });
+
+    // Calcula top 3 mais ouvidos
+    const artistPlays = new Map();
+    AppState.musics.forEach(m => {
+        const plays = (typeof playCounts !== 'undefined' ? playCounts[m.id] : 0) || 0;
+        if (plays > 0) artistPlays.set(m.artist, (artistPlays.get(m.artist) || 0) + plays);
+    });
+    const top3 = Array.from(artistPlays.entries())
+        .sort((a,b) => b[1] - a[1]).slice(0, 3)
+        .map(([name, plays]) => ({ name, plays }));
+
     grid.innerHTML = '';
-    artists.forEach(a => {
+
+    // ── Toolbar: contagem + ordenação ──
+    const toolbar = document.createElement('div');
+    toolbar.className = 'artists-toolbar';
+    toolbar.innerHTML = `
+        <span class="artists-toolbar-count"><strong>${artists.length}</strong> artista${artists.length !== 1 ? 's' : ''}</span>
+        <div class="artists-sort">
+            <button class="artists-sort-btn ${artistsSortMode === 'recent' ? 'active' : ''}" data-sort="recent">Relevância</button>
+            <button class="artists-sort-btn ${artistsSortMode === 'az' ? 'active' : ''}" data-sort="az">A-Z</button>
+        </div>
+    `;
+    toolbar.querySelectorAll('.artists-sort-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            artistsSortMode = btn.dataset.sort;
+            renderArtistsGrid();
+        });
+    });
+    grid.appendChild(toolbar);
+
+    // ── Top 3 mais ouvidos ──
+    if (top3.length) {
+        const topLabel = document.createElement('p');
+        topLabel.className = 'lib-artists-top-label';
+        topLabel.innerHTML = `<span class="material-symbols-rounded">local_fire_department</span> Mais ouvidos`;
+        grid.appendChild(topLabel);
+
+        const topRow = document.createElement('div');
+        topRow.className = 'lib-artists-top';
+        const rankClasses = ['gold', 'silver', 'bronze'];
+        const rankLabels  = ['#1', '#2', '#3'];
+        top3.forEach(({ name, plays }, i) => {
+            const cover = AppState.musics.find(m => m.artist === name)?.cover || '';
+            const card = document.createElement('div');
+            card.className = `lib-top-artist-card${i === 0 ? ' rank-1' : ''}`;
+            if (cover) {
+                card.setAttribute('data-cover', '1');
+                card.style.setProperty('--lib-top-bg', `url(${cover})`);
+            }
+            card.innerHTML = `
+                <span class="lib-top-artist-rank ${rankClasses[i]}">${i === 0 ? '<span class="material-symbols-rounded">workspace_premium</span>' : ''}${rankLabels[i]}</span>
+                <div class="lib-top-artist-avatar">
+                    ${cover ? `<img src="${cover}" onerror="this.style.display='none'">` : ''}
+                    <span class="material-symbols-rounded artist-avatar-fallback">person</span>
+                </div>
+                <span class="lib-top-artist-name">${escapeHtml(name)}</span>
+                <span class="lib-top-artist-plays"><span class="material-symbols-rounded">play_arrow</span>${plays}</span>
+            `;
+            card.addEventListener('click', () => openArtistDetail(name));
+            topRow.appendChild(card);
+        });
+        grid.appendChild(topRow);
+
+        const divider = document.createElement('p');
+        divider.className = 'artists-divider-label';
+        divider.innerHTML = `<span class="material-symbols-rounded">apps</span> Todos os artistas`;
+        grid.appendChild(divider);
+    }
+
+    // ── Ordena lista completa ──
+    let sortedArtists = [...artists];
+    if (artistsSortMode === 'az') {
+        sortedArtists.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    } else {
+        // relevância: plays desc, depois alfabético
+        sortedArtists.sort((a, b) => {
+            const pa = artistPlays.get(a.name) || 0;
+            const pb = artistPlays.get(b.name) || 0;
+            if (pb !== pa) return pb - pa;
+            return a.name.localeCompare(b.name, 'pt-BR');
+        });
+    }
+
+    // ── Grade completa ──
+    const allGrid = document.createElement('div');
+    allGrid.className = 'artists-grid-lib';
+    sortedArtists.forEach(a => {
         const card = document.createElement('div');
         card.className = 'artist-card-lib';
         const cover = a.image_url || AppState.musics.find(m => m.artist === a.name)?.cover || '';
+        const trackCount = trackCountByArtist.get(a.name) || 0;
         card.innerHTML = `
             <div class="artist-avatar-lib">
                 ${cover ? `<img src="${cover}" onerror="this.style.display='none'">` : ''}
                 <span class="material-symbols-rounded artist-avatar-fallback">person</span>
             </div>
             <span class="artist-name-lib">${escapeHtml(a.name)}</span>
+            <span class="artist-tracks-lib">${trackCount} ${trackCount === 1 ? 'música' : 'músicas'}</span>
         `;
         card.addEventListener('click', () => openArtistDetail(a.name));
-        grid.appendChild(card);
+        allGrid.appendChild(card);
     });
+    grid.appendChild(allGrid);
 }
 
 function openArtistDetail(artistName) {
@@ -245,28 +384,76 @@ function openArtistDetail(artistName) {
         document.querySelector('.app-container').appendChild(overlay);
     }
 
-    const cover = artistMusics[0]?.cover || '';
+    // Dados extras do artista cadastrado no banco (bio, image_url)
+    const artistRecord = (AppState.artists || []).find(a => a.name === artistName);
+    const cover = artistRecord?.image_url || artistMusics[0]?.cover || '';
+    const bio = artistRecord?.bio && artistRecord.bio.trim() ? artistRecord.bio.trim() : '';
+    const isVerified = !!artistRecord?.image_url;
+
+    // Conta plays do artista e separa as faixas mais ouvidas
+    const totalPlays = artistMusics.reduce((sum, m) => {
+        return sum + ((typeof playCounts !== 'undefined' ? playCounts[m.id] : 0) || 0);
+    }, 0);
+    const playsOf = (m) => (typeof playCounts !== 'undefined' ? playCounts[m.id] : 0) || 0;
+    const popularTracks = [...artistMusics].filter(m => playsOf(m) > 0).sort((a, b) => playsOf(b) - playsOf(a)).slice(0, 5);
+    const popularIds = new Set(popularTracks.map(m => m.id));
+    const restTracks = artistMusics.filter(m => !popularIds.has(m.id));
+
+    const isFav = _isFavArtist(artistName);
+
     overlay.innerHTML = `
         <div class="artist-detail-top">
-            <button class="artist-detail-back"><span class="material-symbols-rounded">arrow_back</span></button>
             <div class="artist-detail-cover-bg" style="${cover ? `background-image:url(${cover})` : ''}"></div>
             <div class="artist-detail-cover-overlay"></div>
+            <div class="artist-detail-top-bar">
+                <button class="artist-detail-back"><span class="material-symbols-rounded">arrow_back</span></button>
+                <button class="artist-detail-fav${isFav ? ' is-fav' : ''}" id="artistFavBtn">
+                    <span class="material-symbols-rounded${isFav ? ' filled' : ''}">favorite</span>
+                </button>
+            </div>
             <div class="artist-detail-info">
                 <div class="artist-detail-avatar">
                     ${cover ? `<img src="${cover}">` : '<span class="material-symbols-rounded">person</span>'}
                 </div>
+                ${isVerified ? `<span class="artist-verified-badge"><span class="material-symbols-rounded">verified</span>Artista</span>` : ''}
                 <h2>${escapeHtml(artistName)}</h2>
-                <p>${artistMusics.length} músicas</p>
+                <p>${artistMusics.length} ${artistMusics.length === 1 ? 'música' : 'músicas'}${totalPlays > 0 ? ` · ${totalPlays} play${totalPlays !== 1 ? 's' : ''}` : ''}</p>
             </div>
+            ${bio ? `
+            <p class="artist-detail-bio clamped" id="artistBioText">${escapeHtml(bio)}</p>
+            <button class="artist-bio-toggle" id="artistBioToggle">Ver mais</button>
+            ` : ''}
+            ${totalPlays > 0 ? `
+            <div class="artist-detail-stats">
+                <div class="artist-stat">
+                    <span class="material-symbols-rounded">play_circle</span>
+                    <div class="artist-stat-text">
+                        <span class="artist-stat-num">${totalPlays}</span>
+                        <span class="artist-stat-label">Plays</span>
+                    </div>
+                </div>
+                <div class="artist-stat">
+                    <span class="material-symbols-rounded">library_music</span>
+                    <div class="artist-stat-text">
+                        <span class="artist-stat-num">${artistMusics.length}</span>
+                        <span class="artist-stat-label">Músicas</span>
+                    </div>
+                </div>
+            </div>` : ''}
             <div class="artist-detail-actions">
-                <button class="playlist-shuffle-btn" id="artistShuffle">
-                    <span class="material-symbols-rounded">shuffle</span>
-                </button>
                 <button class="playlist-play-all-btn" id="artistPlayAll">
                     <span class="material-symbols-rounded">play_arrow</span> Tocar tudo
                 </button>
+                <button class="playlist-shuffle-btn" id="artistShuffle">
+                    <span class="material-symbols-rounded">shuffle</span> Aleatório
+                </button>
             </div>
         </div>
+        ${popularTracks.length ? `
+        <p class="artist-section-label"><span class="material-symbols-rounded">trending_up</span> Mais tocadas</p>
+        <div class="artist-detail-list" id="artistPopularList"></div>
+        <p class="artist-section-label"><span class="material-symbols-rounded">queue_music</span> Catálogo completo</p>
+        ` : ''}
         <div class="artist-detail-list" id="artistMusicList"></div>
     `;
     overlay.classList.add('active');
@@ -274,38 +461,78 @@ function openArtistDetail(artistName) {
     overlay.querySelector('.artist-detail-back').addEventListener('click', () => overlay.classList.remove('active'));
     overlay.querySelector('#artistPlayAll').addEventListener('click', () => {
         if (typeof window.setPlayContext === 'function') window.setPlayContext('search', artistMusics);
-        playMusicTrack(artistMusics[0]); overlay.classList.remove('active');
+        playMusicTrack(artistMusics[0]);
     });
     overlay.querySelector('#artistShuffle').addEventListener('click', () => {
         AppState.isShuffle = true;
         if (typeof window.setPlayContext === 'function') window.setPlayContext('search', artistMusics);
         playMusicTrack(artistMusics[Math.floor(Math.random() * artistMusics.length)]);
-        overlay.classList.remove('active');
     });
 
-    const list = overlay.querySelector('#artistMusicList');
-    artistMusics.forEach(music => {
-        const item = document.createElement('div');
-        item.className = 'artist-music-item';
-        item.innerHTML = `
-            <img src="${music.cover || ''}" onerror="this.style.opacity='0'">
-            <div class="artist-music-info">
-                <span class="artist-music-title">${escapeHtml(music.title)}</span>
-                <span class="artist-music-sub">${escapeHtml(music.artist)}</span>
-            </div>
-            <button class="artist-music-more"><span class="material-symbols-rounded">more_vert</span></button>
-        `;
-        item.addEventListener('click', (e) => {
-            if (e.target.closest('.artist-music-more')) return;
-            if (typeof window.setPlayContext === 'function') window.setPlayContext('search', artistMusics);
-            playMusicTrack(music);
+    // Favoritar artista
+    const favBtn = overlay.querySelector('#artistFavBtn');
+    if (favBtn) {
+        favBtn.addEventListener('click', () => {
+            const nowFav = _toggleFavArtist(artistName);
+            favBtn.classList.toggle('is-fav', nowFav);
+            const icon = favBtn.querySelector('.material-symbols-rounded');
+            icon.classList.toggle('filled', nowFav);
+            showToast(nowFav ? 'Artista favoritado' : 'Removido dos favoritos', 'success');
         });
-        item.querySelector('.artist-music-more').addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (typeof window.openContextMenu === 'function') window.openContextMenu(music);
+    }
+
+    // Bio expansível
+    const bioToggle = overlay.querySelector('#artistBioToggle');
+    if (bioToggle) {
+        bioToggle.addEventListener('click', () => {
+            const bioEl = overlay.querySelector('#artistBioText');
+            const nowClamped = bioEl.classList.toggle('clamped');
+            bioToggle.textContent = nowClamped ? 'Ver mais' : 'Ver menos';
         });
-        list.appendChild(item);
-    });
+    }
+
+    // Renderiza uma lista de itens de música num container
+    const renderTrackList = (container, tracks) => {
+        tracks.forEach((music, idx) => {
+            const isCurrent = AppState.currentMusicId === music.id;
+            const item = document.createElement('div');
+            item.className = `artist-music-item${isCurrent ? ' is-playing' : ''}`;
+            item.dataset.id = music.id;
+            const plays = playsOf(music);
+            item.innerHTML = `
+                <span class="artist-music-num">${isCurrent
+                    ? '<span class="eq-bars"><span></span><span></span><span></span></span>'
+                    : (idx + 1)}</span>
+                ${music.cover
+                    ? `<img class="artist-music-cover" src="${music.cover}" onerror="this.parentNode.innerHTML='<div class=artist-music-cover-placeholder><span class=material-symbols-rounded>music_note</span></div>' + this.parentNode.innerHTML.replace(this.outerHTML,'')">`
+                    : `<div class="artist-music-cover-placeholder"><span class="material-symbols-rounded">music_note</span></div>`}
+                <div class="artist-music-info">
+                    <span class="artist-music-title">${escapeHtml(music.title)}</span>
+                    <span class="artist-music-sub">${plays > 0 ? plays + ' plays' : escapeHtml(music.artist)}</span>
+                </div>
+                <button class="artist-music-more"><span class="material-symbols-rounded">more_vert</span></button>
+            `;
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.artist-music-more')) return;
+                if (typeof window.setPlayContext === 'function') window.setPlayContext('search', artistMusics);
+                playMusicTrack(music);
+                overlay.querySelectorAll('.artist-music-item').forEach(el => el.classList.remove('is-playing'));
+                item.classList.add('is-playing');
+            });
+            item.querySelector('.artist-music-more').addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (typeof window.openContextMenu === 'function') window.openContextMenu(music);
+            });
+            container.appendChild(item);
+        });
+    };
+
+    if (popularTracks.length) {
+        renderTrackList(overlay.querySelector('#artistPopularList'), popularTracks);
+        renderTrackList(overlay.querySelector('#artistMusicList'), restTracks);
+    } else {
+        renderTrackList(overlay.querySelector('#artistMusicList'), artistMusics);
+    }
 }
 window.openArtistDetail = openArtistDetail;
 
@@ -401,29 +628,7 @@ function renderLibrary() {
         });
     }
 
-    // Álbuns
-    const albumsGrid = document.getElementById('albumsGrid');
-    if (albumsGrid) {
-        const albumsData = [
-            { name: "Djavan Ao Vivo", artist: "Djavan" },
-            { name: "O Tempo Não Para", artist: "Cazuza" },
-            { name: "Mais Marisa Monte", artist: "Marisa Monte" },
-            { name: "The Highlights", artist: "The Weeknd" },
-            { name: "After Hours", artist: "The Weeknd" },
-        ];
-        albumsGrid.innerHTML = '';
-        albumsData.forEach(album => {
-            const card = document.createElement('div');
-            card.className = 'album-card';
-            card.innerHTML = `<div class="album-cover"><span class="material-symbols-rounded">album</span></div><h4>${escapeHtml(album.name)}</h4><p>${escapeHtml(album.artist)}</p>`;
-            card.addEventListener('click', () => {
-                const music = AppState.musics.find(m => m.artist === album.artist);
-                if (music) playMusicTrack(music);
-                else showToast('Nenhuma música de ' + album.artist, 'danger');
-            });
-            albumsGrid.appendChild(card);
-        });
-    }
+
 
     // Histórico (dinâmico)
     let histSection = document.getElementById('libHistorySection');
@@ -467,11 +672,10 @@ function renderLibrary() {
     // Controle de abas
     const summaryCards = document.getElementById('summaryCards');
     const playlistsSEl = document.getElementById('playlistsSection');
-    const albumsSEl = document.getElementById('albumsSection');
     const artistsSEl = document.getElementById('artistsSection');
 
     function showOnly(...show) {
-        [summaryCards, playlistsSEl, albumsSEl, artistsSEl, histSection, dlSection].forEach(el => {
+        [summaryCards, playlistsSEl, artistsSEl, histSection, dlSection].forEach(el => {
             if (el) el.style.display = 'none';
         });
         show.forEach(el => {
@@ -481,9 +685,8 @@ function renderLibrary() {
 
     function filterLibrary(filter) {
         switch (filter) {
-            case 'all':      showOnly(summaryCards, playlistsSEl, albumsSEl); break;
+            case 'all':      showOnly(summaryCards, playlistsSEl); break;
             case 'playlists': showOnly(playlistsSEl); break;
-            case 'albums':   showOnly(albumsSEl); break;
             case 'artists':  showOnly(artistsSEl); renderArtistsGrid(); break;
             case 'history':  showOnly(histSection); break;
             case 'downloads':
@@ -760,38 +963,57 @@ function renderQueue() {
 }
 
 async function toggleFavoriteTrack(musicId) {
-    if (!AppState.userId) {
-        showToast("Usuário não identificado", "danger");
-        return;
-    }
+    if (!AppState.userId) return;
 
-    const isCurrentlyFav = AppState.favorites.has(musicId);
-    const added = await window.toggleFavorite(AppState.userId, musicId);
-    
-    if (added === null) {
-        showToast("Erro ao atualizar favorito", "danger");
-        return;
-    }
-
-    if (added) {
-        AppState.favorites.add(musicId);
-        showToast("Adicionada aos favoritos!", "success");
-    } else {
+    // 1. Atualiza estado INSTANTANEAMENTE — zero delay
+    const wasFav = AppState.favorites.has(musicId);
+    if (wasFav) {
         AppState.favorites.delete(musicId);
-        showToast("Removida dos favoritos", "danger");
+    } else {
+        AppState.favorites.add(musicId);
+    }
+    const isFavNow = AppState.favorites.has(musicId);
+
+    // 2. Atualiza UI instantaneamente com animação pop — sem nenhum toast
+    document.querySelectorAll(`.favorite-btn[data-id="${musicId}"]`).forEach(btn => {
+        btn.classList.toggle('active', isFavNow);
+        btn.querySelector('span').innerText = isFavNow ? 'favorite' : 'favorite_border';
+        // Animação de bounce instantânea
+        btn.classList.remove('pop');
+        void btn.offsetWidth; // reflow para reiniciar animação
+        btn.classList.add('pop');
+        setTimeout(() => btn.classList.remove('pop'), 300);
+    });
+
+    // Botão expandido do player
+    const expandedFav = document.getElementById('playerExpandedFavBtn');
+    if (expandedFav && AppState.currentMusicId === musicId) {
+        const span = expandedFav.querySelector('span');
+        if (span) {
+            span.innerText = isFavNow ? 'favorite' : 'favorite_border';
+            expandedFav.style.color = isFavNow ? '#f472b6' : '';
+            expandedFav.classList.remove('pop');
+            void expandedFav.offsetWidth;
+            expandedFav.classList.add('pop');
+            setTimeout(() => expandedFav.classList.remove('pop'), 300);
+        }
     }
 
     localStorage.setItem('supabase_player_favorites', JSON.stringify(Array.from(AppState.favorites)));
 
-    if (typeof window.renderLibrary === 'function') window.renderLibrary();
-    if (typeof window.renderHome === 'function') window.renderHome();
-    
-    const favButtons = document.querySelectorAll(`.favorite-btn[data-id="${musicId}"]`);
-    favButtons.forEach(btn => {
-        const isFav = AppState.favorites.has(musicId);
-        btn.classList.toggle('active', isFav);
-        btn.querySelector('span').innerText = isFav ? 'favorite' : 'favorite_border';
-    });
+    // 3. Sincroniza com Supabase em background — sem toast, silencioso
+    try {
+        const result = await window.toggleFavorite(AppState.userId, musicId);
+        if (result === null) {
+            // Reverte silenciosamente se falhou
+            if (wasFav) AppState.favorites.add(musicId);
+            else AppState.favorites.delete(musicId);
+            document.querySelectorAll(`.favorite-btn[data-id="${musicId}"]`).forEach(btn => {
+                btn.classList.toggle('active', wasFav);
+                btn.querySelector('span').innerText = wasFav ? 'favorite' : 'favorite_border';
+            });
+        }
+    } catch(e) { console.warn('Erro ao sincronizar favorito:', e); }
 }
 
 function escapeHtml(str) {

@@ -111,7 +111,7 @@
                     <button class="lib-icon-btn" id="libSearchBtn" title="Buscar">
                         <span class="material-symbols-rounded">search</span>
                     </button>
-                    <button class="lib-icon-btn" id="libAddBtn" title="Nova playlist">
+                    <button class="lib-icon-btn" id="libAddBtn" title="Nova playlist" onclick="window.openCreatePlaylistModal && window.openCreatePlaylistModal()">
                         <span class="material-symbols-rounded">add</span>
                     </button>
                 </div>
@@ -123,7 +123,6 @@
                 <button class="lib-main-tab" data-filter="playlists">Playlists</button>
                 <button class="lib-main-tab" data-filter="history">Histórico</button>
                 <button class="lib-main-tab" data-filter="artists">Artistas</button>
-                <button class="lib-main-tab" data-filter="albums">Álbuns</button>
                 <button class="lib-main-tab" data-filter="downloads">Downloads</button>
             </div>
 
@@ -148,19 +147,10 @@
                 <div id="playlistsGrid" class="playlists-grid-modern"></div>
             </div>
 
-            <!-- Álbuns -->
-            <div id="albumsSection" class="library-section">
-                <div class="section-header">
-                    <h2>Álbuns</h2>
-                    <button id="seeAllAlbumsBtn" class="text-btn">Ver todos</button>
-                </div>
-                <div id="albumsGrid" class="albums-grid"></div>
-            </div>
-
             <!-- Artistas -->
             <div id="artistsSection" class="library-section" style="display: none;">
                 <div class="section-header"><h2>Artistas</h2></div>
-                <div id="artistsGrid" class="artists-grid"></div>
+                <div id="artistsGrid" class="lib-artists-container"></div>
             </div>
 
             <!-- Histórico inserido dinamicamente -->
@@ -169,6 +159,11 @@
 
     <!-- Detalhe da playlist -->
     <div id="playlistDetailView" style="display: none;">
+        <div style="display:flex;align-items:center;padding:8px 0 0;margin-bottom:4px;">
+            <button id="backToPlaylistsBtn" style="background:rgba(255,255,255,0.06);border:none;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(255,255,255,0.7);flex-shrink:0;">
+                <span class="material-symbols-rounded">arrow_back</span>
+            </button>
+        </div>
         <div class="playlist-detail-header">
             <div class="playlist-detail-cover" id="playlistDetailCover">
                 <span class="material-symbols-rounded">queue_music</span>
@@ -288,9 +283,10 @@
 </div>
         </main>
 
-        <!-- Player inferior -->
+        <!-- Player inferior (Liquid Glass) -->
         <div id="playerBottomBar" class="player-bottom-bar" style="display: none;">
-            <!-- Anel de progresso circular ao redor do cover -->
+
+            <!-- Cover + anel -->
             <div class="mini-cover-wrap" id="miniCoverWrap">
                 <svg class="mini-progress-ring" viewBox="0 0 52 52">
                     <circle class="mini-ring-bg" cx="26" cy="26" r="23"/>
@@ -298,26 +294,27 @@
                 </svg>
                 <img id="playerBottomCover" src="" alt="" class="player-bottom-cover"
                      onerror="this.style.display='none'" onload="this.style.display='block'">
-                <button id="playerBottomPlayBtn" class="mini-play-btn">
-                    <span class="material-symbols-rounded">play_arrow</span>
-                </button>
             </div>
 
-            <!-- Info -->
+            <!-- Info (toca ao clicar) -->
             <div class="mini-info" id="miniInfoArea">
                 <h4 id="playerBottomTitle">Título da Música</h4>
                 <p id="playerBottomArtist">Artista</p>
             </div>
 
-            <!-- Ações -->
-            <div class="mini-actions">
-                <button id="playerBottomMoreBtn" class="mini-action-btn">
-                    <span class="material-symbols-rounded">more_vert</span>
+            <!-- Controles -->
+            <div class="mini-controls">
+                <button class="mini-ctrl-btn" id="miniPrevBtnBar">
+                    <span class="material-symbols-rounded">skip_previous</span>
                 </button>
-                <button class="mini-action-btn mini-fav-btn" id="miniFavBtn">
-                    <span class="material-symbols-rounded">favorite_border</span>
+                <button class="mini-ctrl-play" id="playerBottomPlayBtn">
+                    <span class="material-symbols-rounded">play_arrow</span>
+                </button>
+                <button class="mini-ctrl-btn" id="miniNextBtnBar">
+                    <span class="material-symbols-rounded">skip_next</span>
                 </button>
             </div>
+
         </div>
 
         <!-- Barra de navegação inferior -->
@@ -456,7 +453,23 @@
     </div>
 
     <!-- MODAIS -->
-    <div id="playlistModal" class="modal-backdrop"><div class="modal-content-box"><h3 id="modalPlaylistTitle">Criar Nova Playlist</h3><input type="text" id="newPlaylistName" placeholder="Digite o nome da playlist..."><div class="modal-file-label" id="playlistCoverLabel"><span class="material-symbols-rounded">image</span><span class="file-name" id="coverFileName">Nenhum arquivo escolhido</span><span class="material-symbols-rounded">upload</span></div><input type="file" id="playlistCoverFile" accept="image/*" style="display: none;"><div class="modal-actions-wrapper"><button id="cancelModalBtn">Cancelar</button><button id="confirmModalBtn">Salvar</button></div></div></div>
+    <div id="playlistModal" class="modal-backdrop">
+        <div class="modal-content-box">
+            <h3 id="modalPlaylistTitle">Nova Playlist</h3>
+            <div class="playlist-modal-new">
+                <div class="playlist-modal-cover-preview" id="playlistCoverPreview">
+                    <span class="material-symbols-rounded">add_photo_alternate</span>
+                    <span class="playlist-modal-cover-hint">Capa</span>
+                </div>
+                <input type="text" id="newPlaylistName" placeholder="Nome da playlist..." autocomplete="off">
+                <input type="file" id="playlistCoverFile" accept="image/*" style="display:none;">
+            </div>
+            <div class="modal-actions-wrapper">
+                <button id="cancelModalBtn">Cancelar</button>
+                <button id="confirmModalBtn">Salvar</button>
+            </div>
+        </div>
+    </div>
     <div id="addToPlaylistModal" class="modal-backdrop"><div class="modal-content-box" style="max-width: 380px; padding: 0; border-radius: 28px;"><div style="padding: 20px 20px 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.05);"><h3 style="margin: 0 0 8px 0; font-size: 20px;">Adicionar à playlist</h3><input type="text" id="playlistSearchInput" placeholder="Procurar playlist..." style="width:100%; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:40px; padding:10px 16px; color:white; font-size:14px; margin-top: 8px;"></div><div id="playlistSelectList" style="max-height: 320px; overflow-y: auto; padding: 8px 12px;"></div><div style="padding: 12px 20px 20px 20px; border-top: 1px solid rgba(255,255,255,0.05);"><button id="openCreatePlaylistFromAddBtn" style="width:100%; background:rgba(255,255,255,0.05); border:none; border-radius:40px; padding:12px; color:white; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer;"><span class="material-symbols-rounded">add</span> Nova Playlist</button></div></div></div>
     <div id="createPlaylistSubModal" class="modal-backdrop"><div class="modal-content-box" style="max-width: 320px;"><h3 style="margin-bottom: 16px;">Criar playlist</h3><input type="text" id="subNewPlaylistName" placeholder="Nome da playlist" style="margin-bottom: 20px;"><div class="modal-actions-wrapper"><button id="cancelSubModalBtn">Cancelar</button><button id="confirmSubModalBtn" style="background:#924cff; color:white;">Criar</button></div></div></div>
     <div id="contextMenuBackdrop" class="context-menu-backdrop"></div>
