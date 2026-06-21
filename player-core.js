@@ -411,14 +411,12 @@ function buildAutoQueue(currentMusicId, trackList, isShuffle) {
     let remaining;
 
     if (isShuffle) {
-        // Modo aleatório: embaralha todas exceto a atual
         remaining = trackList.filter(m => m.id !== currentMusicId);
         for (let i = remaining.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
         }
     } else {
-        // Modo normal: músicas após a atual, depois volta do início
         const after  = trackList.slice(currentIdx + 1);
         const before = trackList.slice(0, currentIdx);
         remaining = [...after, ...before];
@@ -434,6 +432,17 @@ function setPlayContext(source, trackList, playlistId = null) {
     if (typeof window.renderQueuePanel === 'function') window.renderQueuePanel();
 }
 
+// ── Histórico de navegação (para botão ◀️ funcionar corretamente) ──
+// Guarda as músicas tocadas em ordem, independente de contexto
+const _playbackHistory = [];
+const _HISTORY_MAX = 50;
+
+function _pushPlaybackHistory(musicId) {
+    if (_playbackHistory[_playbackHistory.length - 1] === musicId) return;
+    _playbackHistory.push(musicId);
+    if (_playbackHistory.length > _HISTORY_MAX) _playbackHistory.shift();
+}
+
 // Retorna a próxima música (fila manual tem prioridade sobre automática)
 function getNextMusic() {
     if (AppState.queue.length > 0) {
@@ -445,16 +454,16 @@ function getNextMusic() {
     return null;
 }
 
-// Retorna a música anterior no contexto atual
+// Retorna a música anterior com base no histórico de reprodução real
 function getPrevMusic() {
-    // Usa o contexto atual ou a lista completa de músicas como fallback
-    const trackList = AppState.playContext?.trackList?.length > 0
-        ? AppState.playContext.trackList
-        : AppState.musics;
-    if (!trackList || trackList.length === 0) return null;
-    const currentIdx = trackList.findIndex(m => m.id === AppState.currentMusicId);
-    if (currentIdx <= 0) return null;
-    return trackList[currentIdx - 1];
+    // Remove a entrada atual do topo
+    if (_playbackHistory.length > 0 &&
+        _playbackHistory[_playbackHistory.length - 1] === AppState.currentMusicId) {
+        _playbackHistory.pop();
+    }
+    if (_playbackHistory.length === 0) return null;
+    const prevId = _playbackHistory[_playbackHistory.length - 1];
+    return AppState.musics.find(m => m.id === prevId) || null;
 }
 
 window.setPlayContext = setPlayContext;
@@ -517,6 +526,9 @@ async function playMusicTrack(music) {
     currentListenMusicId = music.id;
     currentListenStartTime = Date.now();
 
+    // Registra no histórico de navegação para o botão ◀️
+    _pushPlaybackHistory(music.id);
+
     incrementPlayCount(music.id);
 
     let audioUrl = music.src;
@@ -544,13 +556,11 @@ async function playMusicTrack(music) {
             if (typeof window.updatePlayerVisibility === 'function') window.updatePlayerVisibility(music);
             if (typeof window.updatePlayerUIState === 'function') window.updatePlayerUIState();
             if (typeof window.updateMediaSession === 'function') window.updateMediaSession(music);
-            // Se não há contexto de playlist definido, define como 'random' com todas as músicas
-            if (!AppState.playContext.playlistId && AppState.playContext.source !== 'playlist' && AppState.playContext.source !== 'favorites') {
-                if (AppState.autoQueue.length === 0 && AppState.musics.length > 0) {
-                    AppState.autoQueue = buildAutoQueue(music.id, AppState.musics, AppState.isShuffle);
-                }
-            } else if (AppState.autoQueue.length === 0 && AppState.playContext.trackList.length > 0) {
-                AppState.autoQueue = buildAutoQueue(music.id, AppState.playContext.trackList, AppState.isShuffle);
+            // Se a autoQueue está vazia, reconstrói pelo contexto atual
+            if (AppState.autoQueue.length === 0) {
+                const ctx = AppState.playContext;
+                const list = ctx?.trackList?.length > 0 ? ctx.trackList : AppState.musics;
+                AppState.autoQueue = buildAutoQueue(music.id, list, AppState.isShuffle);
             }
             if (typeof window.renderQueuePanel === 'function') window.renderQueuePanel();
         })
@@ -584,56 +594,49 @@ function handleNextTrack() {
     const allMusics = AppState.musics;
     const isPlaylistCtx = source === 'playlist' || source === 'favorites';
 
-    // 2. Contexto de PLAYLIST: reproduz músicas da playlist
+    // 2. Contexto de PLAYLIST: esgota a playlist antes de sair dela
     if (isPlaylistCtx && trackList && trackList.length > 0) {
         if (AppState.autoQueue.length > 0) {
-            const nextInPlaylist = AppState.autoQueue.shift();
-            playMusicTrack(nextInPlaylist);
+            playMusicTrack(AppState.autoQueue.shift());
             return;
         }
-        // Playlist acabou: continua com músicas aleatórias que NÃO estão na playlist
+        // Playlist acabou → toca músicas que não estão na playlist, em ordem aleatória
         const playlistIds = new Set(trackList.map(m => m.id));
         const outsideMusics = allMusics.filter(m => !playlistIds.has(m.id));
         if (outsideMusics.length > 0) {
             const shuffled = [...outsideMusics].sort(() => Math.random() - 0.5);
-            // Muda contexto para random e toca
             AppState.playContext = { source: 'random_after_playlist', playlistId: null, trackList: shuffled };
-            AppState.autoQueue = [...shuffled];
-            const nextRandom = AppState.autoQueue.shift();
-            if (nextRandom) { playMusicTrack(nextRandom); return; }
+            AppState.autoQueue = [...shuffled.slice(1)];
+            playMusicTrack(shuffled[0]);
+            return;
         }
-        // Fallback: reinicia a playlist do início (loop)
+        // Sem músicas fora da playlist: reinicia a playlist
         AppState.autoQueue = buildAutoQueue(AppState.currentMusicId, trackList, AppState.isShuffle);
-        const restart = AppState.autoQueue.shift();
-        if (restart) { playMusicTrack(restart); return; }
+        if (AppState.autoQueue.length > 0) { playMusicTrack(AppState.autoQueue.shift()); return; }
     }
 
-    // 3. Contexto AVULSO (library, search, history, random): músicas aleatórias da biblioteca
+    // 3. Contexto avulso (library, search, history, random): usa autoQueue
     if (AppState.autoQueue.length > 0) {
-        const nextAuto = AppState.autoQueue.shift();
-        playMusicTrack(nextAuto);
+        playMusicTrack(AppState.autoQueue.shift());
         return;
     }
 
-    // 4. Fallback: embaralha tudo novamente e toca
+    // 4. Fallback: reconstrói fila com todas as músicas e embaralha
     if (allMusics.length === 0) return;
-    const otherMusics = allMusics.filter(m => m.id !== AppState.currentMusicId);
-    if (otherMusics.length > 0) {
-        const shuffled = [...otherMusics].sort(() => Math.random() - 0.5);
-        AppState.autoQueue = shuffled;
-        playMusicTrack(shuffled[0]);
-    }
+    const others = allMusics.filter(m => m.id !== AppState.currentMusicId);
+    const shuffled = [...others].sort(() => Math.random() - 0.5);
+    AppState.autoQueue = shuffled.slice(1);
+    if (shuffled.length > 0) playMusicTrack(shuffled[0]);
 }
 
 function handlePrevTrack() {
     const prev = getPrevMusic();
-    if (prev) { playMusicTrack(prev); return; }
-    // Fallback: anterior na biblioteca
-    if (AppState.musics.length === 0) return;
-    const currentIdx = AppState.musics.findIndex(m => m.id === AppState.currentMusicId);
-    let prevIndex = currentIdx - 1;
-    if (prevIndex < 0) prevIndex = AppState.musics.length - 1;
-    playMusicTrack(AppState.musics[prevIndex]);
+    if (prev) {
+        playMusicTrack(prev);
+        return;
+    }
+    // Sem histórico: reinicia a música atual do início
+    if (DOM.audio) DOM.audio.currentTime = 0;
 }
 
 function formatTime(secs) {
@@ -655,15 +658,12 @@ function showToast(message, type = 'success') {
 }
 
 // ===== ROTEADOR DE URL =====
-// Mapeia o pathname atual para o estado da UI e restaura ao carregar/navegar
-
 const _TAB_URL = {
     '/inicio':    'inicio',
     '/busca':     'buscar',
     '/biblioteca':'biblioteca',
     '/perfil':    'perfil',
 };
-
 const _LIB_FILTER_URL = {
     '/biblioteca/playlists':  'playlists',
     '/biblioteca/historico':  'history',
@@ -671,7 +671,6 @@ const _LIB_FILTER_URL = {
     '/biblioteca/downloads':  'downloads',
 };
 
-// Gera a URL limpa para o estado atual
 window.getUrlForState = function({ tab, libFilter, playlistId, artistName } = {}) {
     if (tab === 'inicio')     return '/inicio';
     if (tab === 'buscar')     return '/busca';
@@ -688,61 +687,48 @@ window.getUrlForState = function({ tab, libFilter, playlistId, artistName } = {}
     return '/inicio';
 };
 
-// Lê o pathname e restaura o estado da UI correspondente (chamado no load e no popstate)
+// Flag: após o boot, _activateTab já pode renderizar normalmente
+let _bootDone = false;
+
 window.restoreStateFromUrl = function() {
     const path = window.location.pathname;
-
-    // Playlist específica: /biblioteca/playlist/:id
     const playlistMatch = path.match(/^\/biblioteca\/playlist\/(.+)$/);
     if (playlistMatch) {
         const id = decodeURIComponent(playlistMatch[1]);
-        _activateTab('biblioteca');
-        // Espera renderLibrary terminar antes de abrir o detalhe
+        _activateTab('biblioteca', true);
         const tryOpen = (attempts = 0) => {
             const playlist = (AppState.userPlaylists || []).find(p => String(p.id) === String(id));
             if (playlist && typeof window.openPlaylistDetail === 'function') {
-                window.openPlaylistDetail(playlist, true); // true = sem pushState
-            } else if (attempts < 20) {
-                setTimeout(() => tryOpen(attempts + 1), 150);
-            }
+                window.openPlaylistDetail(playlist, true);
+            } else if (attempts < 20) { setTimeout(() => tryOpen(attempts + 1), 150); }
         };
         setTimeout(() => tryOpen(), 300);
         return;
     }
-
-    // Artista: /biblioteca/artista/:nome
     const artistMatch = path.match(/^\/biblioteca\/artista\/(.+)$/);
     if (artistMatch) {
         const name = decodeURIComponent(artistMatch[1]);
-        _activateTab('biblioteca');
+        _activateTab('biblioteca', true);
         const tryOpen = (attempts = 0) => {
             if (AppState.musics && AppState.musics.length && typeof window.openArtistDetail === 'function') {
-                window.openArtistDetail(name, true); // true = sem pushState
-            } else if (attempts < 20) {
-                setTimeout(() => tryOpen(attempts + 1), 150);
-            }
+                window.openArtistDetail(name, true);
+            } else if (attempts < 20) { setTimeout(() => tryOpen(attempts + 1), 150); }
         };
         setTimeout(() => tryOpen(), 300);
         return;
     }
-
-    // Subtab de biblioteca: /biblioteca/playlists, /biblioteca/historico, etc.
     if (_LIB_FILTER_URL[path]) {
-        _activateTab('biblioteca');
+        _activateTab('biblioteca', true);
         setTimeout(() => {
-            const filterBtn = document.querySelector(`.lib-main-tab[data-filter="${_LIB_FILTER_URL[path]}"]`);
-            if (filterBtn) filterBtn.click();
+            const btn = document.querySelector(`.lib-main-tab[data-filter="${_LIB_FILTER_URL[path]}"]`);
+            if (btn) btn.click();
         }, 200);
         return;
     }
-
-    // Tab principal
-    const tabId = _TAB_URL[path] || 'inicio';
-    _activateTab(tabId);
+    _activateTab(_TAB_URL[path] || 'inicio', !_bootDone);
 };
 
-// Ativa uma tab sem pushState (uso interno do router)
-function _activateTab(tabId) {
+function _activateTab(tabId, noRender = false) {
     const navButtons = document.querySelectorAll('.nav-bar .nav-btn');
     const tabContents = document.querySelectorAll('.main-content .tab-content');
     navButtons.forEach(b => b.classList.remove('active'));
@@ -752,6 +738,7 @@ function _activateTab(tabId) {
     const tabEl = document.getElementById(tabId);
     if (tabEl) tabEl.classList.add('active');
     AppState.currentTab = tabId;
+    if (noRender) return;
     if (tabId === 'inicio'     && typeof window.renderHome    === 'function') window.renderHome();
     if (tabId === 'buscar'     && typeof window.initSearch    === 'function') window.initSearch();
     if (tabId === 'biblioteca' && typeof window.renderLibrary === 'function') window.renderLibrary();
@@ -766,20 +753,18 @@ function initTabs() {
 
     function switchTab(tabId, btn) {
         if (!tabId) return;
-        if (typeof window.closePlaylistDetail === 'function') window.closePlaylistDetail(true); // true = sem pushState
+        if (typeof window.closePlaylistDetail === 'function') window.closePlaylistDetail(true);
         navButtons.forEach(b => b.classList.remove('active'));
         tabContents.forEach(t => t.classList.remove('active'));
         if (btn) btn.classList.add('active');
         const activeTab = document.getElementById(tabId);
         if (activeTab) activeTab.classList.add('active');
         AppState.currentTab = tabId;
-        if (tabId === 'inicio' && typeof window.renderHome === 'function') window.renderHome();
-        if (tabId === 'buscar' && typeof window.initSearch === 'function') window.initSearch();
+        if (tabId === 'inicio'     && typeof window.renderHome    === 'function') window.renderHome();
+        if (tabId === 'buscar'     && typeof window.initSearch    === 'function') window.initSearch();
         if (tabId === 'biblioteca' && typeof window.renderLibrary === 'function') window.renderLibrary();
-        if (tabId === 'perfil' && typeof window.renderProfile === 'function') window.renderProfile();
-        // Atualiza URL
-        const url = window.getUrlForState({ tab: tabId });
-        history.pushState({ tab: tabId }, '', url);
+        if (tabId === 'perfil'     && typeof window.renderProfile === 'function') window.renderProfile();
+        history.pushState({ tab: tabId }, '', window.getUrlForState({ tab: tabId }));
     }
 
     navButtons.forEach(btn => {
@@ -791,10 +776,7 @@ function initTabs() {
         btn.addEventListener('touchstart', handler, { passive: false });
     });
 
-    // Botão voltar do browser / Android
-    window.addEventListener('popstate', () => {
-        window.restoreStateFromUrl();
-    });
+    window.addEventListener('popstate', () => window.restoreStateFromUrl());
 }
 
 function initKeyboardShortcuts() {
@@ -987,6 +969,7 @@ async function _refreshFromSupabaseInBackground() {
 
 async function initApp() {
     await loadInitialData();
+    _bootDone = true;
     if (typeof window.renderHome === 'function') window.renderHome();
     if (typeof window.renderLibrary === 'function') window.renderLibrary();
     if (typeof window.renderProfile === 'function') window.renderProfile();

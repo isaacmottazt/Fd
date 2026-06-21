@@ -1,0 +1,289 @@
+/* =========================================================
+   PAINEL DE FILA — side sheet da direita
+   ========================================================= */
+
+/* Backdrop */
+.queue-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 4500;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+.queue-backdrop.active {
+    opacity: 1;
+    pointer-events: all;
+}
+
+/* Painel — slide da direita */
+.queue-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(88vw, 360px);
+    z-index: 4600;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: translateX(100%);
+    transition: transform 0.36s cubic-bezier(0.32, 0, 0.15, 1);
+
+    /* Fundo: gradiente profundo com borda esquerda neon */
+    background: linear-gradient(160deg, #0e0b1a 0%, #080612 100%);
+    border-left: 1px solid rgba(124, 77, 255, 0.25);
+    box-shadow: -12px 0 48px rgba(0, 0, 0, 0.7),
+                -1px 0 0 rgba(124, 77, 255, 0.1);
+}
+.queue-panel.active {
+    transform: translateX(0);
+}
+
+/* ── Cabeçalho ── */
+.queue-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 52px 20px 16px;
+    flex-shrink: 0;
+    background: linear-gradient(180deg, rgba(124,77,255,0.08) 0%, transparent 100%);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.queue-panel-header h3 {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.35);
+    margin: 0;
+}
+.queue-close-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: rgba(255, 255, 255, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.queue-close-btn:active {
+    background: rgba(124,77,255,0.2);
+    color: #fff;
+    border-color: rgba(124,77,255,0.4);
+}
+.queue-close-btn .material-symbols-rounded { font-size: 18px; }
+
+/* ── Lista ── */
+.queue-panel-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 40px;
+}
+.queue-panel-list::-webkit-scrollbar { display: none; }
+
+/* ── Label de seção ── */
+.qp-label {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.2);
+    padding: 20px 20px 8px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.qp-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.05);
+}
+
+/* ── Item da fila ── */
+.qp-item {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.12s;
+}
+.qp-item:active { background: rgba(124,77,255,0.07); }
+
+/* Barra lateral esquerda colorida na música atual */
+.qp-item--current::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: linear-gradient(180deg, #a855f7, #7c3aed);
+    box-shadow: 0 0 8px rgba(168,85,247,0.6);
+}
+
+/* Número do índice */
+.qp-index {
+    width: 44px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.18);
+    font-variant-numeric: tabular-nums;
+    padding: 14px 0;
+}
+.qp-item--current .qp-index {
+    color: #a855f7;
+}
+
+/* Barrinhas animadas na música atual */
+.qp-eq {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 14px;
+}
+.qp-eq span {
+    width: 2px;
+    border-radius: 2px;
+    background: #a855f7;
+    animation: qpEq 0.9s ease-in-out infinite;
+}
+.qp-eq span:nth-child(1) { height: 40%; animation-delay: 0s; }
+.qp-eq span:nth-child(2) { height: 100%; animation-delay: 0.2s; }
+.qp-eq span:nth-child(3) { height: 60%; animation-delay: 0.4s; }
+@keyframes qpEq {
+    0%, 100% { transform: scaleY(0.4); }
+    50% { transform: scaleY(1); }
+}
+
+/* Cover compacto */
+.qp-cover {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: rgba(255,255,255,0.05);
+}
+.qp-cover--ph {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    background: rgba(124,77,255,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.qp-cover--ph .material-symbols-rounded {
+    font-size: 18px;
+    color: rgba(255,255,255,0.2);
+}
+.qp-item--current .qp-cover {
+    box-shadow: 0 0 0 1.5px rgba(168,85,247,0.5);
+}
+
+/* Info */
+.qp-info {
+    flex: 1;
+    min-width: 0;
+    padding: 14px 8px 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.qp-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.85);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+}
+.qp-item--current .qp-title {
+    color: #fff;
+    font-weight: 700;
+}
+.qp-artist {
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+}
+
+/* Botão remover (fila manual) */
+.qp-remove {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.2);
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    border-radius: 8px;
+    transition: color 0.12s, background 0.12s;
+    margin-right: 8px;
+}
+.qp-remove:active {
+    color: #f87171;
+    background: rgba(248,113,113,0.1);
+}
+.qp-remove .material-symbols-rounded { font-size: 16px; }
+
+/* Separador entre items */
+.qp-item + .qp-item {
+    border-top: 1px solid rgba(255,255,255,0.03);
+}
+
+/* ── Estado vazio ── */
+.qp-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 60px 24px;
+    text-align: center;
+}
+.qp-empty .material-symbols-rounded {
+    font-size: 40px;
+    color: rgba(124,77,255,0.3);
+}
+.qp-empty p {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0;
+    color: rgba(255,255,255,0.35);
+}
+.qp-empty span {
+    font-size: 12px;
+    color: rgba(255,255,255,0.2);
+}
+
+/* ── Handle visual (drag indicator no topo do painel lateral) ── */
+.queue-drag-handle { display: none; }

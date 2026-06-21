@@ -437,14 +437,18 @@ document.addEventListener('keydown', (e) => {
 // ========== PAINEL DE FILA ==========
 function openQueuePanel() {
     const panel = document.getElementById('queuePanel');
+    const backdrop = document.getElementById('queueBackdrop');
     if (!panel) return;
     renderQueuePanel();
     panel.classList.add('active');
+    if (backdrop) backdrop.classList.add('active');
 }
 
 function closeQueuePanel() {
     const panel = document.getElementById('queuePanel');
+    const backdrop = document.getElementById('queueBackdrop');
     if (panel) panel.classList.remove('active');
+    if (backdrop) backdrop.classList.remove('active');
 }
 
 function renderQueuePanel() {
@@ -457,7 +461,7 @@ function renderQueuePanel() {
 
     if (!hasAnything) {
         list.innerHTML = `
-            <div class="queue-empty-state">
+            <div class="qp-empty">
                 <span class="material-symbols-rounded">queue_music</span>
                 <p>Fila vazia</p>
                 <span>Toque em uma música para começar</span>
@@ -468,25 +472,34 @@ function renderQueuePanel() {
     list.innerHTML = '';
 
     function makeItem(music, idx, isManual) {
+        const isCurrent = AppState.currentMusicId === music.id;
         const item = document.createElement('div');
-        item.className = 'queue-panel-item';
+        item.className = `qp-item${isCurrent ? ' qp-item--current' : ''}`;
+        const cover = typeof sanitizeUrl === 'function' ? sanitizeUrl(music.cover) : (music.cover || '');
         item.innerHTML = `
-            <img src="${typeof sanitizeUrl === 'function' ? sanitizeUrl(music.cover) : (music.cover || '')}" class="queue-panel-cover">
-            <div class="queue-panel-info">
-                <p class="queue-panel-title">${escapeHtml(music.title)}</p>
-                <p class="queue-panel-artist">${escapeHtml(music.artist)}</p>
+            <span class="qp-index">${isCurrent
+                ? `<span class="qp-eq"><span></span><span></span><span></span></span>`
+                : (idx + 1)}</span>
+            ${cover
+                ? `<img src="${cover}" class="qp-cover" onerror="this.style.display='none'">`
+                : `<div class="qp-cover qp-cover--ph"><span class="material-symbols-rounded">music_note</span></div>`}
+            <div class="qp-info">
+                <p class="qp-title">${escapeHtml(music.title)}</p>
+                <p class="qp-artist">${escapeHtml(music.artist)}</p>
             </div>
-            ${isManual ? `<button class="queue-panel-remove"><span class="material-symbols-rounded">close</span></button>` : ''}
+            ${isManual
+                ? `<button class="qp-remove" aria-label="Remover"><span class="material-symbols-rounded">close</span></button>`
+                : ''}
         `;
         if (isManual) {
-            item.querySelector('.queue-panel-remove').addEventListener('click', (e) => {
+            item.querySelector('.qp-remove').addEventListener('click', (e) => {
                 e.stopPropagation();
                 AppState.queue.splice(idx, 1);
                 renderQueuePanel();
             });
         }
         item.addEventListener('click', (e) => {
-            if (e.target.closest('.queue-panel-remove')) return;
+            if (e.target.closest('.qp-remove')) return;
             if (isManual) AppState.queue = AppState.queue.slice(idx);
             else AppState.autoQueue = AppState.autoQueue.slice(idx);
             playMusicTrack(music);
@@ -495,20 +508,18 @@ function renderQueuePanel() {
         return item;
     }
 
-    // Seção fila manual
     if (manualQueue.length > 0) {
         const label = document.createElement('p');
-        label.className = 'queue-section-label';
+        label.className = 'qp-label';
         label.textContent = 'Na fila';
         list.appendChild(label);
         manualQueue.forEach((music, idx) => list.appendChild(makeItem(music, idx, true)));
     }
 
-    // Seção fila automática
     if (autoQueue.length > 0) {
         const label = document.createElement('p');
-        label.className = 'queue-section-label';
-        label.textContent = AppState.isShuffle ? 'Próximas (aleatório)' : 'Próximas';
+        label.className = 'qp-label';
+        label.textContent = 'A seguir';
         list.appendChild(label);
         autoQueue.slice(0, 20).forEach((music, idx) => list.appendChild(makeItem(music, idx, false)));
     }

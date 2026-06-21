@@ -1,5 +1,5 @@
-// Fenda Music — Service Worker v12
-const CACHE_NAME = 'fenda-v12';
+// Fenda Music — Service Worker v13
+const CACHE_NAME = 'fenda-v13';
 
 const PLAYER_ROUTES = new Set(['/player.html', '/player', '/inicio', '/busca', '/biblioteca', '/perfil']);
 const LOGIN_ROUTES  = new Set(['/index.html', '/login', '/']);

@@ -394,7 +394,7 @@ function openArtistDetail(artistName, skipPush = false) {
         overlay = document.createElement('div');
         overlay.id = 'artistDetailOverlay';
         overlay.className = 'artist-detail-overlay';
-        document.querySelector('.app-container').appendChild(overlay);
+        document.body.appendChild(overlay);
     }
 
     // Dados extras do artista cadastrado no banco (bio, image_url)
@@ -415,59 +415,55 @@ function openArtistDetail(artistName, skipPush = false) {
     const isFav = _isFavArtist(artistName);
 
     overlay.innerHTML = `
-        <div class="artist-detail-top">
-            <div class="artist-detail-cover-bg" style="${cover ? `background-image:url(${cover})` : ''}"></div>
-            <div class="artist-detail-cover-overlay"></div>
-            <div class="artist-detail-top-bar">
-                <button class="artist-detail-back"><span class="material-symbols-rounded">arrow_back</span></button>
-                <button class="artist-detail-fav${isFav ? ' is-fav' : ''}" id="artistFavBtn">
+        <div class="ado-hero">
+            <div class="ado-hero-bg" ${cover ? `style="background-image:url(${sanitizeUrl(cover)})"` : ''}></div>
+            <div class="ado-hero-gradient"></div>
+
+            <div class="ado-top-bar">
+                <button class="ado-back-btn"><span class="material-symbols-rounded">arrow_back</span></button>
+                <button class="ado-fav-btn${isFav ? ' is-fav' : ''}" id="artistFavBtn">
                     <span class="material-symbols-rounded${isFav ? ' filled' : ''}">favorite</span>
                 </button>
             </div>
-            <div class="artist-detail-info">
-                <div class="artist-detail-avatar">
-                    ${cover ? `<img src="${sanitizeUrl(cover)}">` : '<span class="material-symbols-rounded">person</span>'}
+
+            <div class="ado-hero-content">
+                <div class="ado-avatar">
+                    ${cover
+                        ? `<img src="${sanitizeUrl(cover)}" alt="${escapeHtml(artistName)}">`
+                        : `<span class="material-symbols-rounded">person</span>`}
                 </div>
-                ${isVerified ? `<span class="artist-verified-badge"><span class="material-symbols-rounded">verified</span>Artista</span>` : ''}
-                <h2>${escapeHtml(artistName)}</h2>
-                <p>${artistMusics.length} ${artistMusics.length === 1 ? 'música' : 'músicas'}${totalPlays > 0 ? ` · ${totalPlays} play${totalPlays !== 1 ? 's' : ''}` : ''}</p>
-            </div>
-            ${bio ? `
-            <p class="artist-detail-bio clamped" id="artistBioText">${escapeHtml(bio)}</p>
-            <button class="artist-bio-toggle" id="artistBioToggle">Ver mais</button>
-            ` : ''}
-            ${totalPlays > 0 ? `
-            <div class="artist-detail-stats">
-                <div class="artist-stat">
-                    <span class="material-symbols-rounded">play_circle</span>
-                    <div class="artist-stat-text">
-                        <span class="artist-stat-num">${totalPlays}</span>
-                        <span class="artist-stat-label">Plays</span>
-                    </div>
-                </div>
-                <div class="artist-stat">
-                    <span class="material-symbols-rounded">library_music</span>
-                    <div class="artist-stat-text">
-                        <span class="artist-stat-num">${artistMusics.length}</span>
-                        <span class="artist-stat-label">Músicas</span>
-                    </div>
-                </div>
-            </div>` : ''}
-            <div class="artist-detail-actions">
-                <button class="playlist-play-all-btn" id="artistPlayAll">
-                    <span class="material-symbols-rounded">play_arrow</span> Tocar tudo
-                </button>
-                <button class="playlist-shuffle-btn" id="artistShuffle">
-                    <span class="material-symbols-rounded">shuffle</span> Aleatório
-                </button>
+                ${isVerified ? `<div class="ado-verified"><span class="material-symbols-rounded">verified</span> Artista verificado</div>` : ''}
+                <h1 class="ado-name">${escapeHtml(artistName)}</h1>
+                <p class="ado-meta">${artistMusics.length} ${artistMusics.length === 1 ? 'música' : 'músicas'}${totalPlays > 0 ? ` · ${totalPlays} play${totalPlays !== 1 ? 's' : ''}` : ''}</p>
+
+                ${bio ? `
+                <div class="ado-bio-wrap">
+                    <p class="ado-bio clamped" id="artistBioText">${escapeHtml(bio)}</p>
+                    <button class="ado-bio-toggle" id="artistBioToggle">Ver mais</button>
+                </div>` : ''}
             </div>
         </div>
+
+        <div class="ado-actions">
+            <button class="ado-btn-play" id="artistPlayAll">
+                <span class="material-symbols-rounded">play_arrow</span>
+                Tocar tudo
+            </button>
+            <button class="ado-btn-shuffle" id="artistShuffle">
+                <span class="material-symbols-rounded">shuffle</span>
+            </button>
+        </div>
+
         ${popularTracks.length ? `
-        <p class="artist-section-label"><span class="material-symbols-rounded">trending_up</span> Mais tocadas</p>
-        <div class="artist-detail-list" id="artistPopularList"></div>
-        <p class="artist-section-label"><span class="material-symbols-rounded">queue_music</span> Catálogo completo</p>
-        ` : ''}
-        <div class="artist-detail-list" id="artistMusicList"></div>
+        <div class="ado-section-label">
+            <span class="material-symbols-rounded">trending_up</span> Mais tocadas
+        </div>
+        <div class="ado-track-list" id="artistPopularList"></div>
+        <div class="ado-section-label">
+            <span class="material-symbols-rounded">queue_music</span> Catálogo
+        </div>` : ''}
+        <div class="ado-track-list" id="artistMusicList"></div>
+        <div style="height:120px"></div>
     `;
     overlay.classList.add('active');
     // Atualiza URL
@@ -476,9 +472,8 @@ function openArtistDetail(artistName, skipPush = false) {
         history.pushState({ tab: 'biblioteca', artistName }, '', url);
     }
 
-    overlay.querySelector('.artist-detail-back').addEventListener('click', () => {
+    overlay.querySelector('.ado-back-btn').addEventListener('click', () => {
         overlay.classList.remove('active');
-        // Volta para /biblioteca na URL
         if (window.getUrlForState) {
             history.pushState({ tab: 'biblioteca' }, '', '/biblioteca');
         }
@@ -515,46 +510,43 @@ function openArtistDetail(artistName, skipPush = false) {
         });
     }
 
-    // Renderiza uma lista de itens de música num container
     const renderTrackList = (container, tracks) => {
         tracks.forEach((music, idx) => {
             const isCurrent = AppState.currentMusicId === music.id;
             const item = document.createElement('div');
-            item.className = `artist-music-item${isCurrent ? ' is-playing' : ''}`;
+            item.className = `ado-track${isCurrent ? ' is-playing' : ''}`;
             item.dataset.id = music.id;
             const plays = playsOf(music);
             item.innerHTML = `
-                <span class="artist-music-num">${isCurrent
+                <span class="ado-track-num">${isCurrent
                     ? '<span class="eq-bars"><span></span><span></span><span></span></span>'
                     : (idx + 1)}</span>
                 ${music.cover
-                    ? `<img class="artist-music-cover" src="${sanitizeUrl(music.cover)}" data-fallback="1">`
-                    : `<div class="artist-music-cover-placeholder"><span class="material-symbols-rounded">music_note</span></div>`}
-                <div class="artist-music-info">
-                    <span class="artist-music-title">${escapeHtml(music.title)}</span>
-                    <span class="artist-music-sub">${plays > 0 ? plays + ' plays' : escapeHtml(music.artist)}</span>
+                    ? `<img class="ado-track-cover" src="${sanitizeUrl(music.cover)}" data-fallback="1">`
+                    : `<div class="ado-track-cover-ph"><span class="material-symbols-rounded">music_note</span></div>`}
+                <div class="ado-track-info">
+                    <span class="ado-track-title">${escapeHtml(music.title)}</span>
+                    <span class="ado-track-sub">${plays > 0 ? plays + ' plays' : escapeHtml(music.artist)}</span>
                 </div>
-                <button class="artist-music-more"><span class="material-symbols-rounded">more_vert</span></button>
+                <button class="ado-track-more"><span class="material-symbols-rounded">more_vert</span></button>
             `;
-            // Onerror via JS — evita XSS de inline handlers
-            const coverImg = item.querySelector('.artist-music-cover[data-fallback]');
+            const coverImg = item.querySelector('.ado-track-cover[data-fallback]');
             if (coverImg) {
                 coverImg.onerror = function() {
                     const ph = document.createElement('div');
-                    ph.className = 'artist-music-cover-placeholder';
+                    ph.className = 'ado-track-cover-ph';
                     ph.innerHTML = '<span class="material-symbols-rounded">music_note</span>';
                     if (this.parentNode) this.parentNode.replaceChild(ph, this);
                 };
             }
-
             item.addEventListener('click', (e) => {
-                if (e.target.closest('.artist-music-more')) return;
+                if (e.target.closest('.ado-track-more')) return;
                 if (typeof window.setPlayContext === 'function') window.setPlayContext('search', artistMusics);
                 playMusicTrack(music);
-                overlay.querySelectorAll('.artist-music-item').forEach(el => el.classList.remove('is-playing'));
+                overlay.querySelectorAll('.ado-track').forEach(el => el.classList.remove('is-playing'));
                 item.classList.add('is-playing');
             });
-            item.querySelector('.artist-music-more').addEventListener('click', (e) => {
+            item.querySelector('.ado-track-more').addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (typeof window.openContextMenu === 'function') window.openContextMenu(music);
             });
