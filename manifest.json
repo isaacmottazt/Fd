@@ -2,7 +2,7 @@
   "name": "Fenda Music",
   "short_name": "Fenda Music",
   "description": "Sua música. Seu mundo.",
-  "start_url": "/inicio",
+  "start_url": "./player.html",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0a0a0f",
@@ -27,5 +27,5 @@
     "music",
     "entertainment"
   ],
-  "scope": "/"
+  "scope": "./"
 }
