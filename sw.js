@@ -1,13 +1,10 @@
 // ============================================================
-// Fenda Music — Service Worker v6
-// Estratégia:
-//   - HTML e JS: network-first (sempre busca versão nova da rede)
-//   - CSS e fontes: cache-first (mudam pouco)
-//   - Supabase: sempre rede, sem cache
+// Fenda Music — Service Worker v2
 // ============================================================
 
-const CACHE_NAME = 'fenda-music-v6';
+const CACHE_NAME = 'fenda-music-v4';
 
+// Arquivos locais que ficam em cache (shell do app)
 const SHELL_ASSETS = [
   './',
   './index.html',
@@ -32,31 +29,12 @@ const SHELL_ASSETS = [
   './fonts/material-symbols-rounded.woff2',
 ];
 
-// Arquivos que usam network-first (sempre pega versão mais nova)
-const NETWORK_FIRST = [
-  'index.html',
-  'player.html',
-  'player-core.js',
-  'player-ui.js',
-  'player-audio-lyrics.js',
-  'player-menus-core.js',
-  'player-music-actions.js',
-  'player-playlists.js',
-  'supabase-config.js',
-  'search.js',
-  'manifest.json',
-];
-
-function isNetworkFirst(url) {
-  return NETWORK_FIRST.some(f => url.pathname.endsWith(f))
-      || url.pathname === '/'
-      || url.pathname.endsWith('/');
-}
-
-// ── Instalação ────────────────────────────────────────────────
+// ── Instalação: pré-cacheia todo o shell ───────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
+      console.log('[SW] Cacheando shell do app...');
+      // Tenta cachear cada arquivo individualmente para não falhar tudo se um errar
       return Promise.allSettled(
         SHELL_ASSETS.map(url =>
           cache.add(url).catch(err => console.warn('[SW] Não cacheou:', url, err))
@@ -64,12 +42,10 @@ self.addEventListener('install', (event) => {
       );
     })
   );
-  // skipWaiting: ativa imediatamente para que os arquivos novos
-  // sejam servidos sem precisar fechar e reabrir o app
   self.skipWaiting();
 });
 
-// ── Ativação: limpa TODOS os caches antigos ──────────────────
+// ── Ativação: remove caches antigos ───────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -81,37 +57,57 @@ self.addEventListener('activate', (event) => {
             return caches.delete(key);
           })
       )
-    ).then(() => self.clients.claim())
+    )
   );
+  self.clients.claim();
 });
 
-// ── Fetch ─────────────────────────────────────────────────────
+// ── Fetch: estratégia por tipo de recurso ─────────────────
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Supabase: sempre rede
+  // Supabase: dados e áudio → sempre rede, sem cache no SW
+  // (os dados são gerenciados pelo CacheDB no app)
   if (url.hostname.includes('supabase.co')) {
     event.respondWith(
-      fetch(event.request).catch(() =>
-        new Response(JSON.stringify([]), {
+      fetch(event.request).catch(() => {
+        // Offline: retorna resposta vazia para não travar
+        return new Response(JSON.stringify([]), {
           headers: { 'Content-Type': 'application/json' }
-        })
-      )
+        });
+      })
     );
     return;
   }
 
-  // Google Fonts e jsDelivr: cache-first
-  if (url.hostname === 'fonts.googleapis.com' ||
-      url.hostname === 'fonts.gstatic.com' ||
-      url.hostname === 'cdn.jsdelivr.net') {
+  // Google Fonts CSS e woff2 → cache first, rede como fallback
+  if (
+    url.hostname === 'fonts.googleapis.com' ||
+    url.hostname === 'fonts.gstatic.com'
+  ) {
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) =>
         cache.match(event.request).then((cached) => {
           if (cached) return cached;
-          return fetch(event.request).then((res) => {
-            if (res.ok) cache.put(event.request, res.clone());
-            return res;
+          return fetch(event.request).then((response) => {
+            if (response.ok) cache.put(event.request, response.clone());
+            return response;
+          }).catch(() => cached); // offline: retorna cache mesmo expirado
+        })
+      )
+    );
+    return;
+  }
+
+  // jsDelivr (SDK Supabase) → cache first
+  if (url.hostname === 'cdn.jsdelivr.net') {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) =>
+        cache.match(event.request).then((cached) => {
+          if (cached) return cached;
+          return fetch(event.request).then((response) => {
+            if (response.ok) cache.put(event.request, response.clone());
+            return response;
           });
         })
       )
@@ -119,38 +115,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Arquivos locais: network-first para HTML/JS, cache-first para CSS/fontes
-  if (url.origin === self.location.origin) {
-    if (isNetworkFirst(url)) {
-      // Network-first: tenta rede, cai no cache se offline
-      event.respondWith(
-        fetch(event.request)
-          .then((res) => {
-            if (res.ok) {
-              // Atualiza o cache com a versão mais nova
-              caches.open(CACHE_NAME).then(c => c.put(event.request, res.clone()));
-            }
-            return res;
-          })
-          .catch(() => caches.match(event.request))
-      );
-    } else {
-      // Cache-first: CSS, fontes, imagens
-      event.respondWith(
-        caches.match(event.request).then((cached) => {
-          if (cached) return cached;
-          return fetch(event.request).then((res) => {
-            if (res.ok) {
-              caches.open(CACHE_NAME).then(c => c.put(event.request, res.clone()));
-            }
-            return res;
-          });
-        })
-      );
-    }
-    return;
-  }
-
-  // Fallback para qualquer outra requisição
-  event.respondWith(fetch(event.request));
+  // Arquivos locais → cache first, rede como fallback
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+      return fetch(event.request).then((response) => {
+        // Cacheia dinamicamente qualquer arquivo local novo
+        if (response.ok && url.origin === self.location.origin) {
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
+        }
+        return response;
+      }).catch(() => {
+        // Offline e sem cache: retorna player.html para qualquer página
+        if (event.request.destination === 'document') {
+          return caches.match('./player.html') || caches.match('./index.html');
+        }
+      });
+    })
+  );
 });
