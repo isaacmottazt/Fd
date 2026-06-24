@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Notificações - Fenda Music</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="player-core.js"></script>
+    <script src="notifications.js"></script>
+    <script src="push-notifications-client-v6.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #a78bfa;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .card {
+            background: rgba(167, 139, 250, 0.1);
+            border: 1px solid rgba(167, 139, 250, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .status {
+            padding: 12px;
+            border-radius: 8px;
+            margin: 8px 0;
+            font-size: 14px;
+        }
+        .ok { background: rgba(52, 211, 153, 0.1); color: #34d399; border-left: 3px solid #34d399; }
+        .error { background: rgba(248, 113, 113, 0.1); color: #f87171; border-left: 3px solid #f87171; }
+        .info { background: rgba(96, 165, 250, 0.1); color: #60a5fa; border-left: 3px solid #60a5fa; }
+        button {
+            background: #a78bfa;
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+            margin: 8px 0;
+        }
+        button:active { opacity: 0.8; }
+        .log {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+        }
+        .log-line {
+            margin: 4px 0;
+            padding: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔔 Teste de Notificações</h1>
+        
+        <div class="card">
+            <h2 style="color: #a78bfa; margin-bottom: 12px;">Status do Sistema</h2>
+            <div id="status"></div>
+        </div>
+
+        <div class="card">
+            <h2 style="color: #a78bfa; margin-bottom: 12px;">Ações</h2>
+            <button onclick="testNotification()">📬 Enviar Notificação de Teste</button>
+            <button onclick="checkDatabase()">🗄️ Verificar Banco de Dados</button>
+            <button onclick="clearCache()">🧹 Limpar Cache</button>
+        </div>
+
+        <div class="card">
+            <h2 style="color: #a78bfa; margin-bottom: 12px;">Logs</h2>
+            <div class="log" id="logs"></div>
+        </div>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const logsEl = document.getElementById('logs');
+
+        function addStatus(text, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = text;
+            statusEl.appendChild(div);
+        }
+
+        function addLog(text) {
+            const div = document.createElement('div');
+            div.className = 'log-line';
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+            logsEl.appendChild(div);
+            logsEl.scrollTop = logsEl.scrollHeight;
+        }
+
+        // Verificar status na carga
+        window.addEventListener('load', async () => {
+            addLog('Página carregada');
+
+            // Checar scripts
+            addStatus(
+                window.pushNotifications ? '✅ Push Notifications carregado' : '❌ Push Notifications não carregado',
+                window.pushNotifications ? 'ok' : 'error'
+            );
+            addStatus(
+                window.FendaNotifications ? '✅ FendaNotifications carregado' : '❌ FendaNotifications não carregado',
+                window.FendaNotifications ? 'ok' : 'error'
+            );
+            addStatus(
+                window.AppState ? '✅ AppState carregado' : '❌ AppState não carregado',
+                window.AppState ? 'ok' : 'error'
+            );
+            addStatus(
+                window.supabaseClient ? '✅ Supabase carregado' : '❌ Supabase não carregado',
+                window.supabaseClient ? 'ok' : 'error'
+            );
+
+            // Checar autenticação
+            if (window.supabaseClient) {
+                try {
+                    const { data: { session } } = await window.supabaseClient.auth.getSession();
+                    if (session) {
+                        addStatus(`✅ Autenticado como: ${session.user.email}`, 'ok');
+                        addLog(`User ID: ${session.user.id}`);
+                    } else {
+                        addStatus('❌ Não autenticado', 'error');
+                    }
+                } catch (e) {
+                    addStatus(`❌ Erro: ${e.message}`, 'error');
+                }
+            }
+        });
+
+        // Testar notificação
+        async function testNotification() {
+            addLog('Enviando notificação de teste...');
+            try {
+                if (window.FendaNotifications && window.FendaNotifications.add) {
+                    window.FendaNotifications.add({
+                        type: 'system',
+                        title: '✅ Teste',
+                        body: 'Se você vê isto, as notificações funcionam!',
+                        icon: 'notifications',
+                        iconBg: '#34d399'
+                    });
+                    addLog('✅ Notificação adicionada');
+                } else {
+                    addLog('❌ FendaNotifications.add não disponível');
+                }
+            } catch (e) {
+                addLog(`❌ Erro: ${e.message}`);
+            }
+        }
+
+        // Verificar banco
+        async function checkDatabase() {
+            addLog('Verificando banco de dados...');
+            try {
+                const client = window.supabaseClient;
+                if (!client) {
+                    addLog('❌ Supabase não disponível');
+                    return;
+                }
+
+                const { data: { session } } = await client.auth.getSession();
+                if (!session) {
+                    addLog('❌ Não autenticado');
+                    return;
+                }
+
+                // Verificar admin_messages
+                const { data: messages } = await client
+                    .from('admin_messages')
+                    .select('id, title, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(3);
+
+                addLog(`✅ admin_messages: ${messages?.length || 0} registros`);
+                messages?.forEach(m => {
+                    addLog(`  - "${m.title}"`);
+                });
+
+                // Verificar message_deliveries
+                const { data: deliveries } = await client
+                    .from('message_deliveries')
+                    .select('id, status, message_id')
+                    .eq('user_id', session.user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(3);
+
+                addLog(`✅ message_deliveries: ${deliveries?.length || 0} registros`);
+                deliveries?.forEach(d => {
+                    addLog(`  - [${d.status}] ${d.message_id}`);
+                });
+            } catch (e) {
+                addLog(`❌ Erro: ${e.message}`);
+            }
+        }
+
+        // Limpar cache
+        async function clearCache() {
+            addLog('Limpando cache...');
+            try {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for (const reg of regs) {
+                    await reg.unregister();
+                }
+                addLog(`✅ ${regs.length} SW desregistrado(s)`);
+
+                const caches_list = await caches.keys();
+                for (const name of caches_list) {
+                    await caches.delete(name);
+                }
+                addLog(`✅ ${caches_list.length} cache(s) deletado(s)`);
+
+                addLog('Recarregando em 2s...');
+                setTimeout(() => location.reload(), 2000);
+            } catch (e) {
+                addLog(`❌ Erro: ${e.message}`);
+            }
+        }
+    </script>
+</body>
+</html>
