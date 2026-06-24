@@ -17,7 +17,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Instalar dependências
         run: npm install
@@ -31,10 +30,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar Capacitor CLI
-        run: npm install -g @capacitor/cli
-
-      - name: Adicionar plataforma Android (se não existir)
+      - name: Adicionar plataforma Android
         run: |
           if [ ! -d "android" ]; then
             npx cap add android
@@ -46,37 +42,30 @@ jobs:
       - name: Dar permissão ao Gradle
         run: chmod +x android/gradlew
 
-      - name: Criar keystore para assinatura
+      - name: Criar keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/fenda-release-key.jks
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
 
-      - name: Criar gradle.properties com credenciais
+      - name: Configurar assinatura
         run: |
-          cat >> android/gradle.properties << EOF
+          cat >> android/gradle.properties << EOF2
           FENDA_STORE_FILE=fenda-release-key.jks
           FENDA_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
           FENDA_KEY_ALIAS=${{ secrets.KEY_ALIAS }}
           FENDA_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
-          EOF
+          EOF2
 
-      - name: Build APK Release
-        run: |
-          cd android
-          ./gradlew assembleRelease --no-daemon
+      - name: Build APK
+        run: cd android && ./gradlew assembleRelease --no-daemon
 
-      - name: Build AAB Release
-        run: |
-          cd android
-          ./gradlew bundleRelease --no-daemon
+      - name: Build AAB
+        run: cd android && ./gradlew bundleRelease --no-daemon
 
-      - name: Renomear arquivos gerados
+      - name: Preparar arquivos
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/release/app-release.apk dist/fenda-music-$(date +%Y%m%d-%H%M).apk || \
-          cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist/fenda-music-$(date +%Y%m%d-%H%M)-unsigned.apk
-          cp android/app/build/outputs/bundle/release/app-release.aab dist/fenda-music-$(date +%Y%m%d-%H%M).aab || true
+          find android/app/build/outputs/apk/release/ -name "*.apk" -exec cp {} dist/fenda-music.apk \;
+          find android/app/build/outputs/bundle/release/ -name "*.aab" -exec cp {} dist/fenda-music.aab \; || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -91,14 +80,3 @@ jobs:
           name: Fenda-Music-AAB
           path: dist/*.aab
           retention-days: 30
-
-      - name: Criar Release no GitHub (se for tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            dist/*.apk
-            dist/*.aab
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
