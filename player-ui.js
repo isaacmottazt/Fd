@@ -48,8 +48,20 @@ function renderHome() {
 
     const recentContainer = document.getElementById('recentlyPlayedList');
     if (recentContainer) {
-        // Mostra as últimas 20 músicas ouvidas (carrossel horizontal)
-        const recentMusics = AppState.history.slice(0, 20).map(item => AppState.musics.find(m => m.id === item.id)).filter(m => m);
+        // Mostra as últimas 20 músicas ouvidas — sem repetição
+        // Cada música aparece só uma vez (a mais recente), mesmo que tenha
+        // sido tocada várias vezes. Dedup por music ID.
+        const _recentSeen = new Set();
+        const recentMusics = AppState.history
+            .filter(item => {
+                const id = item.id ?? item.trackId;
+                if (_recentSeen.has(id)) return false;
+                _recentSeen.add(id);
+                return true;
+            })
+            .slice(0, 20)
+            .map(item => AppState.musics.find(m => m.id === (item.id ?? item.trackId)))
+            .filter(Boolean);
         recentContainer.innerHTML = recentMusics.map(music => `
             <div class="music-card-horizontal" data-id="${music.id}">
                 <img src="${sanitizeUrl(music.cover)}" loading="lazy">
@@ -73,17 +85,24 @@ function renderHome() {
     const favArtistsContainer = document.getElementById('favoriteArtistsList');
     if (favArtistsContainer) {
         // Usa contagem de plays (playCounts) para os 3 artistas mais ouvidos
+        // Agrupa plays por artista com .trim() para evitar duplicatas
+        // causadas por espaços invisíveis ou variações no banco de dados
         const artistPlays = new Map();
         AppState.musics.forEach(m => {
+            const artist = (m.artist || '').trim();
+            if (!artist) return;
             const plays = playCounts[m.id] || 0;
             if (plays > 0) {
-                artistPlays.set(m.artist, (artistPlays.get(m.artist) || 0) + plays);
+                artistPlays.set(artist, (artistPlays.get(artist) || 0) + plays);
             }
         });
         // Fallback: se não há plays, usa favoritos
         if (artistPlays.size === 0) {
             const favMusics = AppState.musics.filter(m => AppState.favorites.has(m.id));
-            favMusics.forEach(m => artistPlays.set(m.artist, (artistPlays.get(m.artist) || 0) + 1));
+            favMusics.forEach(m => {
+                const artist = (m.artist || '').trim();
+                if (artist) artistPlays.set(artist, (artistPlays.get(artist) || 0) + 1);
+            });
         }
         const topArtists = Array.from(artistPlays.entries())
             .sort((a,b) => b[1] - a[1])

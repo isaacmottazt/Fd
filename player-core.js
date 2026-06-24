@@ -121,13 +121,6 @@ function loadLocalUserName() {
     } catch { return null; }
 }
 
-// ── Deduplicação de histórico no Supabase ────────────────────────────────
-// Evita INSERT duplicado quando a mesma música é tocada várias vezes
-// em menos de 30 segundos (ex.: usuário clica duas vezes seguidas).
-// O controle é feito em memória: musicId → timestamp do último INSERT.
-const _historyDedup = new Map();
-const _HISTORY_DEDUP_MS = 30_000; // 30 segundos
-
 async function addToHistory(music, listenedSeconds = 0) {
     if (!music) return;
 
@@ -148,23 +141,13 @@ async function addToHistory(music, listenedSeconds = 0) {
     // 2. Atualiza tempo total ouvido localmente
     if (listenedSeconds > 5) addToTotalTime(listenedSeconds);
 
-    // 3. Atualiza AppState imediatamente (UI reflete sem esperar rede)
+    // 3. Atualiza AppState imediatamente
     AppState.history = history;
 
-    // 4. Salva no Supabase em background — com deduplicação
-    // Só envia se a mesma música não foi registrada nos últimos 30s.
-    // Isso evita INSERTs desnecessários sem nenhuma chamada extra à rede.
+    // 4. Tenta salvar no Supabase em background (não bloqueia)
     if (AppState.userId && navigator.onLine) {
-        const now = Date.now();
-        const lastSaved = _historyDedup.get(String(music.id)) || 0;
-
-        if (now - lastSaved > _HISTORY_DEDUP_MS) {
-            _historyDedup.set(String(music.id), now);
-            window.addToListeningHistory?.(AppState.userId, music.id, listenedSeconds)
-                .catch(() => console.warn('[Cache] Histórico não sincronizado (offline)'));
-        }
-        // Se dentro da janela de dedup: só atualiza localStorage (já feito acima),
-        // Supabase será atualizado na próxima vez que a janela de 30s expirar.
+        window.addToListeningHistory?.(AppState.userId, music.id, listenedSeconds)
+            .catch(() => console.warn('[Cache] Histórico não sincronizado (offline)'));
     }
 }
 
@@ -251,130 +234,7 @@ const CacheDB = {
     }
 };
 
-window.CacheDB      = CacheDB;
-window.openCacheDB  = openCacheDB;   // exposto para download em lote de playlists
-
-// ── REGISTRO DE PERIODIC SYNC ──────────────────────────────────────────────
-// Registra sincronização periódica em background (catálogo + dados do usuário).
-// Suportado no Android Chrome e Edge. Requer permissão "periodic-background-sync".
-async function registerPeriodicSync() {
-    if (!('serviceWorker' in navigator)) return;
-    if (!('periodicSync' in ServiceWorkerRegistration.prototype)) {
-        console.log('[App] Periodic Sync não suportado neste browser');
-        return;
-    }
-    try {
-        const reg = await navigator.serviceWorker.ready;
-        const tags = await reg.periodicSync.getTags();
-
-        if (!tags.includes('fenda-sync-catalog')) {
-            await reg.periodicSync.register('fenda-sync-catalog', {
-                minInterval: 24 * 60 * 60 * 1000 // 24 horas
-            });
-            console.log('[App] Periodic sync de catálogo registrado');
-        }
-        if (!tags.includes('fenda-sync-user')) {
-            await reg.periodicSync.register('fenda-sync-user', {
-                minInterval: 12 * 60 * 60 * 1000 // 12 horas
-            });
-            console.log('[App] Periodic sync de usuário registrado');
-        }
-    } catch (e) {
-        console.warn('[App] Periodic sync falhou:', e.message);
-    }
-}
-
-// ── NOTIFICAÇÕES PUSH ──────────────────────────────────────────────────────
-// IMPORTANTE: substitua VAPID_PUBLIC_KEY pela sua chave pública real.
-// Gere com: npx web-push generate-vapid-keys
-// Guarde a chave PRIVADA no servidor (Supabase Edge Function / backend).
-const VAPID_PUBLIC_KEY = 'BDScGZPERV87Y9bLVVyXl98QFK1-xWIs5hwYXGuwkzAy01PUTTbhU3V1x4Qigc_TSLp-0cYH55y_U28nm_5J_xQ';
-
-async function subscribePushNotifications() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        console.log('[App] Push não suportado neste browser');
-        return null;
-    }
-    try {
-        const reg = await navigator.serviceWorker.ready;
-
-        // Verifica se já tem subscription ativa
-        const existing = await reg.pushManager.getSubscription();
-        if (existing) return existing;
-
-        // Solicita permissão ao usuário
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-            console.log('[App] Permissão de notificação negada');
-            return null;
-        }
-
-        // Cria a subscription com a chave VAPID
-        const sub = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: _urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-        });
-
-        // Envia subscription para o backend (Supabase Edge Function)
-        if (AppState.userId) {
-            await fetch('https://ublmmwatrqvthbcmnrps.supabase.co/functions/v1/save-push-subscription', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: AppState.userId, subscription: sub })
-            }).catch(() => {});
-        }
-
-        console.log('[App] Push subscription criada com sucesso');
-        return sub;
-    } catch (e) {
-        console.warn('[App] Erro ao subscrever push:', e.message);
-        return null;
-    }
-}
-
-// Converte chave VAPID de base64 para Uint8Array (padrão da Web Push API)
-function _urlBase64ToUint8Array(base64String) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-    const rawData = atob(base64);
-    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
-}
-
-// Ouve mensagens do SW (clique em notificação, background sync)
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', event => {
-        const { type, url, musicId, payload } = event.data || {};
-
-        if (type === 'NOTIFICATION_CLICK') {
-            // Toca a música da notificação se tiver musicId
-            if (musicId) {
-                const music = AppState.musics.find(m => String(m.id) === String(musicId));
-                if (music) playMusicTrack(music);
-            } else if (url) {
-                window.location.href = url;
-            }
-        }
-
-        if (type === 'BACKGROUND_SYNC' && payload === 'user-data') {
-            // SW pediu sync de dados — recarrega favoritos se estiver logado
-            if (AppState.userId && typeof window.loadUserFavorites === 'function') {
-                window.loadUserFavorites(AppState.userId).catch(() => {});
-            }
-        }
-    });
-}
-
-// Registra serviços de background 3s após o boot (não bloqueia o carregamento)
-window.addEventListener('load', () => {
-    setTimeout(() => {
-        registerPeriodicSync();
-        // Push: só solicita permissão se usuário está logado
-        if (AppState.userId) subscribePushNotifications();
-    }, 3000);
-});
-
-window.subscribePushNotifications = subscribePushNotifications;
-window.registerPeriodicSync       = registerPeriodicSync;
+window.CacheDB = CacheDB;
 
 // ===== CACHE OFFLINE DE ÁUDIO =====
 const DB_NAME = 'FendaMusicAudio_v4'; // nome novo = banco novo, sem conflito com versões antigas
@@ -411,8 +271,8 @@ async function isMusicCached(musicId) {
     } catch { return false; }
 }
 
-// Baixa e salva a música no IndexedDB.
-// silent=true: suprime todos os toasts internos — usado no download em lote de playlists
+// Baixa e salva a música no IndexedDB com progresso
+// silent=true suprime toasts internos — usado no download em lote de playlists
 async function cacheAudio(music, silent = false) {
     const url = music.src;
     const musicId = music.id;
@@ -422,7 +282,7 @@ async function cacheAudio(music, silent = false) {
         const response = await fetch(url);
         if (!response.ok) throw new Error('Falha ao baixar áudio');
 
-        // Progresso só exibido no download individual (não em lote)
+        // Lê com progresso se possível
         const contentLength = response.headers.get('Content-Length');
         let blob;
         if (contentLength && response.body) {
@@ -970,74 +830,149 @@ async function loadInitialData() {
 }
 
 async function _fetchAllFromSupabase() {
-    // ── Se offline, carrega tudo do cache e para por aqui ───────────
     if (!navigator.onLine) {
-        console.log('[Cache]  Offline — carregando tudo do cache local...');
+        console.log('[Cache] Offline — usando cache local');
         await _loadAllFromCache();
         return;
     }
 
-    // ── Online: busca do Supabase ────────────────────────────────────
-    const supabasePromise = (async () => {
-        if (typeof window.loadMusicsFromSupabase === 'function') {
-            try { return await window.loadMusicsFromSupabase(); } catch (err) { return []; }
-        }
-        return [];
-    })();
-    const localDataPromise = new Promise(resolve => {
-        const local = localStorage.getItem('supabase_player_fallback');
-        resolve(local ? JSON.parse(local) : []);
-    });
-    const [musicsFromSupabase, localData] = await Promise.all([supabasePromise, localDataPromise]);
-    const allMusics = [...musicsFromSupabase, ...localData];
-    const uniqueMusics = [];
-    const ids = new Set();
-    for (const m of allMusics) { if (!ids.has(m.id)) { ids.add(m.id); uniqueMusics.push(m); } }
-    AppState.musics = uniqueMusics;
-
-    AppState.artists = typeof window.loadAllArtists === 'function'
-        ? await window.loadAllArtists()
-        : [];
-
-    // Dados do usuário
-    let profile = {}, playlists = [], history = [], favorites = [], searchTerms = [];
-    if (AppState.userId) {
-        const [p, pl, hi, fav, st] = await Promise.all([
-            window.getUserProfile(AppState.userId),
-            window.loadUserPlaylists(AppState.userId),
-            window.loadListeningHistory(AppState.userId, 20),
-            window.loadUserFavorites(AppState.userId),
-            window.loadSearchHistory(AppState.userId, 5)
+    // ── Helper: adiciona timeout para não travar em Supabase lento ────
+    function _withTimeout(promise, ms = 10_000, fallback = null) {
+        return Promise.race([
+            promise,
+            new Promise(resolve => setTimeout(() => resolve(fallback), ms))
         ]);
-        profile      = p   || {};
-        playlists    = pl  || [];
-        favorites    = fav || [];
-        searchTerms  = st  || [];
-        AppState.userProfile   = profile;
-        AppState.userPlaylists = playlists;
-        AppState.favorites     = new Set(favorites);
-        AppState.history = (hi || []).map(h => ({
-            id: h.music_id,
-            title:  AppState.musics.find(m => m.id === h.music_id)?.title  || '',
-            artist: AppState.musics.find(m => m.id === h.music_id)?.artist || '',
-            cover:  AppState.musics.find(m => m.id === h.music_id)?.cover  || '',
-            listenedSeconds: h.listened_seconds,
-            playedAt: new Date(h.played_at).getTime()
-        }));
-        window.recentSearchesGlobal = searchTerms;
-        if (typeof window.renderRecentSearches === 'function') window.renderRecentSearches();
     }
 
-    // ── Salva dados do usuário no cache (músicas não são salvas) ────────
-    if (AppState.userId) {
+    // ── Renderiza telas com os dados disponíveis no momento ───────────
+    function _rerender() {
+        if (typeof window.renderHome     === 'function') window.renderHome();
+        if (typeof window.renderLibrary  === 'function') window.renderLibrary();
+        if (typeof window.renderProfile  === 'function') window.renderProfile();
+    }
+
+    // ── TODAS as buscas em paralelo — nenhuma espera outra ───────────
+    // Histórico NÃO vai ao Supabase: o localStorage é mais atualizado
+    // e já está carregado por _loadAllFromCache() antes desta função.
+    const [musicsResult, artistsResult, userResult] = await Promise.allSettled([
+
+        // 1. Músicas do catálogo + fallback local
+        _withTimeout((async () => {
+            const remote = typeof window.loadMusicsFromSupabase === 'function'
+                ? await window.loadMusicsFromSupabase().catch(() => [])
+                : [];
+            const local  = (() => {
+                try { return JSON.parse(localStorage.getItem('supabase_player_fallback') || '[]'); }
+                catch { return []; }
+            })();
+            const all = [...remote, ...local];
+            const ids = new Set();
+            return all.filter(m => !ids.has(m.id) && ids.add(m.id));
+        })(), 12_000, []),
+
+        // 2. Artistas (antes era serial — agora paralelo com músicas)
+        _withTimeout(
+            typeof window.loadAllArtists === 'function'
+                ? window.loadAllArtists().catch(() => [])
+                : Promise.resolve([]),
+            8_000, []
+        ),
+
+        // 3. Dados do usuário: perfil, playlists, favoritos, busca recente
+        //    Tudo em Promise.all para serem paralelos entre si também
+        AppState.userId
+            ? _withTimeout(Promise.all([
+                window.getUserProfile(AppState.userId).catch(() => ({})),
+                window.loadUserPlaylists(AppState.userId).catch(() => []),
+                window.loadUserFavorites(AppState.userId).catch(() => []),
+                // Histórico do Supabase — essencial para sincronizar entre
+                // dispositivos e após limpar o cache local
+                window.loadListeningHistory(AppState.userId, 50).catch(() => []),
+                (window.loadSearchHistory
+                    ? window.loadSearchHistory(AppState.userId, 5).catch(() => [])
+                    : Promise.resolve([]))
+              ]), 12_000, null)
+            : Promise.resolve(null),
+    ]);
+
+    // ── Aplica músicas — re-renderiza imediatamente ───────────────────
+    if (musicsResult.status === 'fulfilled' && musicsResult.value?.length) {
+        AppState.musics = musicsResult.value;
+        // Primeiro render: mostra catálogo assim que chegar
+        _rerender();
+        console.log('[Cache] Músicas carregadas:', AppState.musics.length);
+    }
+
+    // ── Aplica artistas ───────────────────────────────────────────────
+    if (artistsResult.status === 'fulfilled') {
+        AppState.artists = artistsResult.value || [];
+    }
+
+    // ── Aplica dados do usuário — segundo render com tudo ─────────────
+    if (userResult.status === 'fulfilled' && userResult.value) {
+        const [profile, playlists, favorites, supabaseHistory, searchTerms] = userResult.value;
+        AppState.userProfile   = profile   || {};
+        AppState.userPlaylists = playlists || [];
+        AppState.favorites     = new Set(favorites || []);
+        window.recentSearchesGlobal = searchTerms || [];
+        if (typeof window.renderRecentSearches === 'function') window.renderRecentSearches();
+
+        // ── Merge de histórico: Supabase + localStorage ───────────────
+        // O Supabase tem histórico de OUTROS dispositivos / sessões antigas.
+        // O localStorage tem os plays mais recentes desta sessão.
+        // Resultado: histórico unificado da conta, sem duplicatas.
+        if (supabaseHistory && supabaseHistory.length > 0) {
+            // Converte registros do Supabase para o formato interno
+            const remoteHistory = supabaseHistory.map(h => ({
+                id:              h.music_id,
+                title:           AppState.musics.find(m => m.id === h.music_id)?.title  || h.title  || '',
+                artist:          AppState.musics.find(m => m.id === h.music_id)?.artist || h.artist || '',
+                cover:           AppState.musics.find(m => m.id === h.music_id)?.cover  || h.cover  || '',
+                listenedSeconds: h.listened_seconds || 0,
+                playedAt:        new Date(h.played_at).getTime()
+            }));
+
+            // Merge com histórico local (local = mais recente e preciso)
+            const localHistory = AppState.history || [];
+            const merged = [...localHistory, ...remoteHistory]
+                .sort((a, b) => (b.playedAt || 0) - (a.playedAt || 0))
+                .filter((() => {
+                    // Dedup: mesma música no mesmo dia = uma entrada só
+                    const seen = new Set();
+                    return h => {
+                        const key = `${h.id}_${new Date(h.playedAt || 0).toDateString()}`;
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    };
+                })())
+                .slice(0, 50);
+
+            AppState.history = merged;
+            saveLocalHistory(merged); // persiste localmente para boot offline
+            console.log('[Cache] Histórico sincronizado:', merged.length, 'entradas');
+        }
+
+        // Salva tudo no cache para o próximo boot offline
         CacheDB.saveAll({
             playlists:     AppState.userPlaylists,
             favorites:     [...AppState.favorites],
             history:       AppState.history,
             profile:       AppState.userProfile,
-            searchHistory: searchTerms,
+            searchHistory: searchTerms || [],
             userId:        AppState.userId,
         });
+
+        // Segundo render: agora com dados completos do usuário
+        _rerender();
+        console.log('[Cache] Dados do usuário carregados:', {
+            perfil:    AppState.userProfile?.full_name || '—',
+            playlists: AppState.userPlaylists.length,
+            favoritos: AppState.favorites.size,
+            histórico: AppState.history.length,
+        });
+    } else if (userResult.status === 'rejected') {
+        console.warn('[Cache] Dados do usuário falharam:', userResult.reason);
     }
 }
 
@@ -1345,7 +1280,8 @@ window.showToast = showToast;
 window.handleNextTrack = handleNextTrack;
 window.handlePrevTrack = handlePrevTrack;
 window.formatTime = formatTime;
-window.cacheAudio = cacheAudio;
+window.cacheAudio  = cacheAudio;
+window.openCacheDB  = openCacheDB;
 window.getCachedAudioUrl = getCachedAudioUrl;
 window.isMusicCached = isMusicCached;
 window.removeCachedAudio = removeCachedAudio;

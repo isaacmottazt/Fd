@@ -263,7 +263,7 @@ async function addToListeningHistory(userId, musicId, listenedSeconds) {
     }
 }
 
-async function loadListeningHistory(userId, limit = 20) {
+async function loadListeningHistory(userId, limit = 50) {
     try {
         const { data, error } = await supabaseClient
             .from('listening_history')
