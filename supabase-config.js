@@ -90,6 +90,9 @@ const STORAGE_BUCKET = 'music-files';
 const { createClient } = supabase;
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Expor globalmente para push-notifications acessar
+window.supabaseClient = supabaseClient;
+
 // ========== CRUD MÚSICAS ==========
 async function loadMusicsFromSupabase() {
     try {

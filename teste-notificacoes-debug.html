@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug de Notificações - Fenda Music</title>
+    <link rel="stylesheet" href="fonts/material-symbols.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0812;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 { font-size: 24px; margin-bottom: 20px; color: #c084fc; }
+        .section {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(192,132,252,0.2);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .section h2 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #a855f7;
+        }
+        button {
+            background: #7c3aed;
+            border: none;
+            color: #fff;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-bottom: 8px;
+            width: 100%;
+            margin-right: 0;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+        button:active { background: #6d28d9; transform: scale(0.96); }
+        button.secondary {
+            background: rgba(168,85,247,0.2);
+            border: 1px solid rgba(168,85,247,0.4);
+            color: #c084fc;
+        }
+        .log {
+            background: rgba(0,0,0,0.5);
+            border-left: 3px solid #7c3aed;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .log.error { border-left-color: #ef4444; }
+        .log.success { border-left-color: #10b981; }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0;
+            font-size: 13px;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ef4444;
+        }
+        .status-dot.ok { background: #10b981; }
+        .status-dot.pending { background: #f59e0b; }
+        input {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(192,132,252,0.2);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            width: 100%;
+            margin-bottom: 8px;
+            font-family: inherit;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🔍 Debug de Notificações</h1>
+
+    <!-- VERIFICAÇÃO BÁSICA -->
+    <div class="section">
+        <h2>1️⃣ Verificação Básica</h2>
+        <button onclick="checkDependencies()">Verificar Dependências</button>
+        <button onclick="checkNotificationPermission()" class="secondary">Ver Permissão de Notificações</button>
+        <div id="log1" class="log"></div>
+    </div>
+
+    <!-- POLLING -->
+    <div class="section">
+        <h2>2️⃣ Sistema de Polling</h2>
+        <button onclick="testPolling()">Testar Polling (próxima iteração)</button>
+        <button onclick="queryPendingNotifications()" class="secondary">Query Manual: Notificações Pendentes</button>
+        <div id="log2" class="log"></div>
+    </div>
+
+    <!-- PAINEL DE NOTIFICAÇÕES -->
+    <div class="section">
+        <h2>3️⃣ Painel de Notificações</h2>
+        <button onclick="testNotificationPanel()">Verificar Painel</button>
+        <button onclick="openNotificationPanel()" class="secondary">Abrir Painel</button>
+        <button onclick="addFakeNotification()" class="secondary">Adicionar Notificação Fake</button>
+        <div id="log3" class="log"></div>
+    </div>
+
+    <!-- NOTIFICAÇÕES NATIVAS -->
+    <div class="section">
+        <h2>4️⃣ Notificações Nativas (Browser)</h2>
+        <button onclick="testNativeNotification()">Testar Notificação Nativa</button>
+        <div id="log4" class="log"></div>
+    </div>
+
+    <!-- CRIAR MANUAL -->
+    <div class="section">
+        <h2>5️⃣ Inserir Manualmente no Banco</h2>
+        <input type="text" id="notifTitle" placeholder="Título da notificação" value="Teste Manual">
+        <input type="text" id="notifBody" placeholder="Corpo da notificação" value="Esta é uma notificação de teste">
+        <button onclick="insertManualNotification()">Inserir e Testar Polling Imediatamente</button>
+        <div id="log5" class="log"></div>
+    </div>
+
+    <!-- ESTADO GERAL -->
+    <div class="section">
+        <h2>📊 Estado Geral</h2>
+        <div id="statusContainer"></div>
+    </div>
+</div>
+
+<script src="supabase-config.js"></script>
+<script>
+// Helpers de log
+const logs = {
+    log1: '',
+    log2: '',
+    log3: '',
+    log4: '',
+    log5: ''
+};
+
+function addLog(section, message, type = 'info') {
+    const timestamp = new Date().toLocaleTimeString();
+    const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+    logs[section] += `[${timestamp}] ${prefix} ${message}\n`;
+    
+    const el = document.getElementById(section);
+    if (el) {
+        el.textContent = logs[section];
+        el.className = 'log ' + (type === 'error' ? 'error' : type === 'success' ? 'success' : '');
+        el.scrollTop = el.scrollHeight;
+    }
+}
+
+function clearLog(section) {
+    logs[section] = '';
+    const el = document.getElementById(section);
+    if (el) el.textContent = '';
+}
+
+// 1. VERIFICAR DEPENDÊNCIAS
+async function checkDependencies() {
+    clearLog('log1');
+    addLog('log1', 'Verificando dependências...');
+    
+    try {
+        // Supabase
+        if (typeof window.supabaseClient === 'undefined') {
+            addLog('log1', 'supabaseClient: NÃO ENCONTRADO', 'error');
+        } else {
+            const { data: { session } } = await window.supabaseClient.auth.getSession();
+            if (session) {
+                addLog('log1', `supabaseClient: OK (usuário: ${session.user.email})`, 'success');
+            } else {
+                addLog('log1', 'supabaseClient: Encontrado mas NÃO AUTENTICADO', 'error');
+            }
+        }
+
+        // FendaNotifications
+        if (typeof FendaNotifications === 'undefined') {
+            addLog('log1', 'FendaNotifications: NÃO ENCONTRADO', 'error');
+        } else {
+            addLog('log1', 'FendaNotifications: OK', 'success');
+        }
+
+        // AppState
+        if (typeof AppState === 'undefined') {
+            addLog('log1', 'AppState: NÃO ENCONTRADO (warning)', 'warning');
+        } else {
+            addLog('log1', 'AppState: OK', 'success');
+        }
+
+        // Push notifications module
+        if (typeof window.pushNotifications === 'undefined') {
+            addLog('log1', 'pushNotifications: NÃO ENCONTRADO', 'error');
+        } else {
+            addLog('log1', 'pushNotifications: OK', 'success');
+        }
+
+        // Service Worker
+        if (!('serviceWorker' in navigator)) {
+            addLog('log1', 'Service Worker: NÃO SUPORTADO', 'error');
+        } else {
+            const reg = await navigator.serviceWorker.getRegistrations();
+            addLog('log1', `Service Worker: OK (${reg.length} registrado)`, 'success');
+        }
+
+        // Notification API
+        if (!('Notification' in window)) {
+            addLog('log1', 'Notification API: NÃO SUPORTADA', 'error');
+        } else {
+            addLog('log1', `Notification API: OK (permissão: ${Notification.permission})`, 'success');
+        }
+    } catch (e) {
+        addLog('log1', `ERRO: ${e.message}`, 'error');
+    }
+}
+
+// 2. TESTAR POLLING
+async function testPolling() {
+    clearLog('log2');
+    addLog('log2', 'Iniciando próximo ciclo de polling...');
+    
+    try {
+        // Tenta chamar a função de polling
+        if (typeof window.pushNotifications?.startPolling === 'function') {
+            // Já está rodando, vamos apenas chamar novamente
+            await window.pushNotifications.startPolling();
+            addLog('log2', 'Polling iniciado/reiniciado', 'success');
+        } else {
+            addLog('log2', 'window.pushNotifications.startPolling não disponível', 'error');
+        }
+
+        // Aguarda 2 segundos para ver se encontra algo
+        await new Promise(r => setTimeout(r, 2000));
+        addLog('log2', 'Verifique o console do navegador para logs do [Push]', 'info');
+    } catch (e) {
+        addLog('log2', `ERRO: ${e.message}`, 'error');
+    }
+}
+
+// 2B. QUERY MANUAL
+async function queryPendingNotifications() {
+    clearLog('log2');
+    addLog('log2', 'Buscando notificações pendentes...');
+    
+    try {
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (!session) {
+            addLog('log2', 'Você não está autenticado', 'error');
+            return;
+        }
+
+        const { data, error } = await window.supabaseClient
+            .from('message_deliveries')
+            .select(`message_id, status, admin_messages!inner(id, title, body)`)
+            .eq('user_id', session.user.id)
+            .eq('status', 'pending')
+            .limit(5);
+
+        if (error) {
+            addLog('log2', `Erro na query: ${error.message}`, 'error');
+            addLog('log2', `Detalhes: ${JSON.stringify(error)}`, 'error');
+        } else if (!data || data.length === 0) {
+            addLog('log2', 'Nenhuma notificação pendente encontrada', 'info');
+            addLog('log2', '👉 Dica: Use a seção 5 para inserir uma notificação de teste', 'info');
+        } else {
+            addLog('log2', `Encontradas ${data.length} notificações pendentes:`, 'success');
+            data.forEach((d, i) => {
+                addLog('log2', `  [${i+1}] ${d.admin_messages.title} - ${d.admin_messages.body}`, 'success');
+            });
+        }
+    } catch (e) {
+        addLog('log2', `ERRO: ${e.message}`, 'error');
+    }
+}
+
+// 3. VERIFICAR PAINEL
+async function testNotificationPanel() {
+    clearLog('log3');
+    addLog('log3', 'Verificando painel de notificações...');
+    
+    try {
+        const overlay = document.getElementById('notificationsOverlay');
+        const list = document.getElementById('notifList');
+        const closeBtn = document.getElementById('notifCloseBtn');
+
+        if (!overlay) {
+            addLog('log3', 'notificationsOverlay: NÃO ENCONTRADO', 'error');
+        } else {
+            addLog('log3', 'notificationsOverlay: OK', 'success');
+            addLog('log3', `  Visível: ${overlay.classList.contains('active')}`, 'info');
+        }
+
+        if (!list) {
+            addLog('log3', 'notifList: NÃO ENCONTRADO', 'error');
+        } else {
+            addLog('log3', 'notifList: OK', 'success');
+            const childCount = list.children.length;
+            addLog('log3', `  Itens renderizados: ${childCount}`, 'info');
+        }
+
+        if (!closeBtn) {
+            addLog('log3', 'notifCloseBtn: NÃO ENCONTRADO', 'error');
+        } else {
+            addLog('log3', 'notifCloseBtn: OK', 'success');
+        }
+
+        // Tentar chamar FendaNotifications
+        if (typeof FendaNotifications?.getAll === 'function') {
+            const all = FendaNotifications.getAll();
+            addLog('log3', `Total de notificações no localStorage: ${all.length}`, 'success');
+        }
+    } catch (e) {
+        addLog('log3', `ERRO: ${e.message}`, 'error');
+    }
+}
+
+async function openNotificationPanel() {
+    clearLog('log3');
+    try {
+        if (typeof FendaNotifications?.openNotifications === 'function') {
+            FendaNotifications.openNotifications();
+            addLog('log3', 'Painel aberto. Verifique a tela!', 'success');
+        } else {
+            addLog('log3', 'FendaNotifications.openNotifications não disponível', 'error');
+        }
+    } catch (e) {
+        addLog('log3', `ERRO: ${e.message}`, 'error');
+    }
+}
+
+async function addFakeNotification() {
+    clearLog('log3');
+    try {
+        if (typeof FendaNotifications?.add === 'function') {
+            FendaNotifications.add({
+                type: 'system',
+                title: 'Notificação de Teste',
+                body: 'Se apareceu aqui, o painel funciona!',
+                icon: 'notifications',
+                iconBg: '#7c3aed'
+            });
+            addLog('log3', 'Notificação fake adicionada ao painel', 'success');
+            
+            // Abrir painel automaticamente
+            FendaNotifications.openNotifications();
+            addLog('log3', 'Painel aberto para você ver', 'success');
+        } else {
+            addLog('log3', 'FendaNotifications.add não disponível', 'error');
+        }
+    } catch (e) {
+        addLog('log3', `ERRO: ${e.message}`, 'error');
+    }
+}
+
+// 4. NOTIFICAÇÕES NATIVAS
+async function testNativeNotification() {
+    clearLog('log4');
+    
+    if (!('Notification' in window)) {
+        addLog('log4', 'Notification API não suportada', 'error');
+        return;
+    }
+
+    if (Notification.permission === 'denied') {
+        addLog('log4', 'Permissão negada pelo usuário', 'error');
+        return;
+    }
+
+    if (Notification.permission === 'default') {
+        addLog('log4', 'Solicitando permissão...');
+        const perm = await Notification.requestPermission();
+        addLog('log4', `Permissão: ${perm}`, perm === 'granted' ? 'success' : 'error');
+        if (perm !== 'granted') return;
+    }
+
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification('Teste Nativo - Fenda Music', {
+            body: 'Se viu uma notificação na sua tela, a API nativa funciona!',
+            icon: '/icons/icon-192.png',
+            badge: '/icons/icon-96.png',
+            tag: 'test-native',
+            vibrate: [200, 100, 200]
+        });
+        addLog('log4', 'Notificação nativa exibida (verifique sua tela)', 'success');
+    } catch (e) {
+        addLog('log4', `ERRO: ${e.message}`, 'error');
+    }
+}
+
+// 5. INSERIR MANUALMENTE
+async function insertManualNotification() {
+    clearLog('log5');
+    const title = document.getElementById('notifTitle').value || 'Teste';
+    const body = document.getElementById('notifBody').value || 'Notificação de teste';
+
+    addLog('log5', 'Inserindo notificação manual...');
+
+    try {
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (!session) {
+            addLog('log5', 'Você não está autenticado', 'error');
+            return;
+        }
+
+        // 1. Inserir admin_message
+        const { data: msg, error: msgErr } = await window.supabaseClient
+            .from('admin_messages')
+            .insert([{ title, body }])
+            .select();
+
+        if (msgErr || !msg || msg.length === 0) {
+            addLog('log5', `Erro ao inserir mensagem: ${msgErr?.message}`, 'error');
+            return;
+        }
+
+        const messageId = msg[0].id;
+        addLog('log5', `Mensagem criada com ID: ${messageId}`, 'success');
+
+        // 2. Inserir delivery com status='pending'
+        const { error: delivErr } = await window.supabaseClient
+            .from('message_deliveries')
+            .insert([{
+                user_id: session.user.id,
+                message_id: messageId,
+                status: 'pending'
+            }]);
+
+        if (delivErr) {
+            addLog('log5', `Erro ao inserir delivery: ${delivErr.message}`, 'error');
+            return;
+        }
+
+        addLog('log5', 'Delivery criado com status=pending', 'success');
+
+        // 3. Aguardar 2 segundos e ver se polling pega
+        addLog('log5', 'Aguardando próximo ciclo de polling (até 10s)...');
+        await new Promise(r => setTimeout(r, 2000));
+
+        // 4. Verificar manualmente
+        const { data: check } = await window.supabaseClient
+            .from('message_deliveries')
+            .select('status')
+            .eq('message_id', messageId)
+            .single();
+
+        addLog('log5', `Status atual: ${check?.status}`, check?.status === 'sent' ? 'success' : 'info');
+        
+        if (check?.status === 'pending') {
+            addLog('log5', '⚠️ Notificação ainda está PENDING - polling pode não estar rodando', 'warning');
+        } else if (check?.status === 'sent') {
+            addLog('log5', '✅ Notificação foi marcada como SENT - polling funcionou!', 'success');
+        }
+    } catch (e) {
+        addLog('log5', `ERRO: ${e.message}`, 'error');
+    }
+}
+
+// STATUS GERAL
+async function updateStatus() {
+    const container = document.getElementById('statusContainer');
+    const checks = [];
+
+    // Supabase
+    try {
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        checks.push({
+            label: 'Autenticado',
+            ok: !!session,
+            detail: session ? session.user.email : 'Não'
+        });
+    } catch {
+        checks.push({ label: 'Autenticado', ok: false, detail: 'Erro' });
+    }
+
+    // Push permissions
+    checks.push({
+        label: 'Permissão de Notificações',
+        ok: Notification.permission === 'granted',
+        detail: Notification.permission
+    });
+
+    // Service Worker
+    try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        checks.push({
+            label: 'Service Worker',
+            ok: regs.length > 0,
+            detail: regs.length > 0 ? 'Registrado' : 'Não'
+        });
+    } catch {
+        checks.push({ label: 'Service Worker', ok: false, detail: 'Erro' });
+    }
+
+    // FendaNotifications
+    checks.push({
+        label: 'FendaNotifications',
+        ok: typeof FendaNotifications !== 'undefined',
+        detail: typeof FendaNotifications !== 'undefined' ? 'Carregado' : 'Não'
+    });
+
+    // Polling
+    checks.push({
+        label: 'Push Notifications Module',
+        ok: typeof window.pushNotifications !== 'undefined',
+        detail: typeof window.pushNotifications !== 'undefined' ? 'Carregado' : 'Não'
+    });
+
+    container.innerHTML = checks.map(c => `
+        <div class="status">
+            <span class="status-dot ${c.ok ? 'ok' : 'pending'}"></span>
+            <span><strong>${c.label}:</strong> ${c.detail}</span>
+        </div>
+    `).join('');
+}
+
+// Inicializar
+window.addEventListener('load', () => {
+    setTimeout(updateStatus, 1000);
+    setInterval(updateStatus, 5000);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Debug Notificações - Fenda</title>
+    <link rel="stylesheet" href="fonts/material-symbols.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0812;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            padding: 16px;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: #c084fc;
+        }
+        .test-box {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(192,132,252,0.2);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+        .test-box h2 {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #a855f7;
+        }
+        button {
+            background: #7c3aed;
+            border: none;
+            color: #fff;
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            width: 100%;
+            margin-bottom: 8px;
+            transition: all 0.15s;
+            font-family: inherit;
+            font-size: 14px;
+        }
+        button:active {
+            background: #6d28d9;
+            transform: scale(0.96);
+        }
+        .result {
+            background: rgba(0,0,0,0.5);
+            border-left: 3px solid #7c3aed;
+            padding: 12px;
+            margin-top: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        .result.error {
+            border-left-color: #ef4444;
+        }
+        .result.success {
+            border-left-color: #10b981;
+        }
+        .result.pending {
+            border-left-color: #f59e0b;
+        }
+        .icon {
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .loading {
+            display: inline-block;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .hidden {
+            display: none !important;
+        }
+        input {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(192,132,252,0.2);
+            color: #fff;
+            padding: 10px;
+            border-radius: 6px;
+            width: 100%;
+            margin-bottom: 8px;
+            font-family: inherit;
+            font-size: 14px;
+        }
+        .info-text {
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🔧 Debug Notificações Fenda</h1>
+
+    <!-- TEST 1: Verificação -->
+    <div class="test-box">
+        <h2>1. Verificar Sistema</h2>
+        <button onclick="testSystem()">
+            <span class="icon">🔍</span> Verificar
+        </button>
+        <div id="result1" class="result hidden"></div>
+    </div>
+
+    <!-- TEST 2: Ver notificações pendentes -->
+    <div class="test-box">
+        <h2>2. Notificações no Banco</h2>
+        <button onclick="testPending()">
+            <span class="icon">📊</span> Ver Pendentes
+        </button>
+        <div id="result2" class="result hidden"></div>
+    </div>
+
+    <!-- TEST 3: Testar painel -->
+    <div class="test-box">
+        <h2>3. Testar Painel</h2>
+        <button onclick="testPanel()">
+            <span class="icon">📋</span> Adicionar Teste & Abrir
+        </button>
+        <div id="result3" class="result hidden"></div>
+        <div class="info-text">
+            👆 Se o painel abrir com a notificação "TESTE", painel funciona.
+        </div>
+    </div>
+
+    <!-- TEST 4: Criar notificação manual -->
+    <div class="test-box">
+        <h2>4. Criar Notificação Manual</h2>
+        <input type="text" id="titleInput" placeholder="Título" value="Notificação Teste">
+        <input type="text" id="bodyInput" placeholder="Corpo" value="Enviado via debug">
+        <button onclick="createManual()">
+            <span class="icon">➕</span> Criar & Aguardar
+        </button>
+        <div id="result4" class="result hidden"></div>
+        <div class="info-text">
+            👆 Se aparecer no painel do app em até 10s, polling funciona.
+        </div>
+    </div>
+
+    <!-- TEST 5: Forçar polling -->
+    <div class="test-box">
+        <h2>5. Forçar Polling</h2>
+        <button onclick="forcePolling()">
+            <span class="icon">⚡</span> Forçar Busca Agora
+        </button>
+        <div id="result5" class="result hidden"></div>
+    </div>
+</div>
+
+<script src="supabase-config.js"></script>
+<script>
+// Helper pra mostrar resultado
+function showResult(id, message, type = 'info') {
+    const el = document.getElementById(id);
+    el.innerHTML = message;
+    el.className = `result ${type}`;
+    el.classList.remove('hidden');
+}
+
+function showLoading(id) {
+    const el = document.getElementById(id);
+    el.innerHTML = '<span class="loading">⏳</span> Aguarde...';
+    el.className = 'result pending';
+    el.classList.remove('hidden');
+}
+
+// TEST 1: SISTEMA
+async function testSystem() {
+    showLoading('result1');
+    
+    let msg = '';
+    
+    // Supabase
+    msg += window.supabaseClient ? '✅ Supabase conectado\n' : '❌ Supabase não encontrado\n';
+    
+    // Auth
+    try {
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        msg += session ? `✅ Autenticado: ${session.user.email}\n` : '❌ Não autenticado\n';
+    } catch (e) {
+        msg += `❌ Erro auth: ${e.message}\n`;
+    }
+    
+    // FendaNotifications
+    msg += typeof FendaNotifications !== 'undefined' ? '✅ FendaNotifications carregado\n' : '❌ FendaNotifications não encontrado\n';
+    
+    // Painel HTML
+    msg += document.getElementById('notifList') ? '✅ Painel HTML existe\n' : '❌ Painel HTML não encontrado\n';
+    
+    // Service Worker
+    if ('serviceWorker' in navigator) {
+        try {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            msg += regs.length > 0 ? `✅ Service Worker registrado\n` : '⚠️ SW não registrado\n';
+        } catch {
+            msg += '⚠️ Erro ao verificar SW\n';
+        }
+    } else {
+        msg += '❌ Service Worker não suportado\n';
+    }
+    
+    // Notificações nativas
+    msg += 'Notification' in window ? `✅ API Nativa (${Notification.permission})\n` : '❌ Notification API não suportada\n';
+    
+    // Push module
+    msg += typeof window.pushNotifications !== 'undefined' ? '✅ Push module carregado\n' : '❌ Push module não encontrado\n';
+    
+    showResult('result1', msg, 'info');
+}
+
+// TEST 2: PENDENTES
+async function testPending() {
+    showLoading('result2');
+    
+    try {
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (!session) {
+            showResult('result2', '❌ Você não está autenticado', 'error');
+            return;
+        }
+        
+        const { data, error } = await window.supabaseClient
+            .from('message_deliveries')
+            .select('message_id, status, admin_messages(title, body)')
+            .eq('user_id', session.user.id)
+            .eq('status', 'pending');
+        
+        if (error) {
+            showResult('result2', `❌ ERRO NO BANCO:\n${error.message}\n\nProvavelmente RLS policy bloqueando.`, 'error');
+            return;
+        }
+        
+        if (!data || data.length === 0) {
+            showResult('result2', `⚠️ NENHUMA NOTIFICAÇÃO PENDENTE\n\nSeu servidor não está inserindo dados.`, 'pending');
+            return;
+        }
+        
+        let msg = `✅ ENCONTRADAS ${data.length} NOTIFICAÇÕES:\n\n`;
+        data.forEach((d, i) => {
+            msg += `[${i+1}] ${d.admin_messages.title}\n`;
+            msg += `    ${d.admin_messages.body}\n`;
+            msg += `    Status: ${d.status}\n\n`;
+        });
+        
+        showResult('result2', msg, 'success');
+    } catch (e) {
+        showResult('result2', `❌ ERRO:\n${e.message}`, 'error');
+    }
+}
+
+// TEST 3: PAINEL
+async function testPanel() {
+    try {
+        if (typeof FendaNotifications?.add !== 'function') {
+            showResult('result3', '❌ FendaNotifications.add não existe', 'error');
+            return;
+        }
+        
+        FendaNotifications.add({
+            type: 'fire',
+            title: '🔥 TESTE',
+            body: 'Se você vê isto aqui, painel funciona!'
+        });
+        
+        // Abrir painel
+        if (typeof FendaNotifications?.openNotifications === 'function') {
+            FendaNotifications.openNotifications();
+            showResult('result3', '✅ Notificação adicionada e painel aberto\n\nVocê deveria ver a notificação na tela.', 'success');
+        } else {
+            showResult('result3', '✅ Notificação adicionada\n⚠️ Mas openNotifications não funciona', 'pending');
+        }
+    } catch (e) {
+        showResult('result3', `❌ ERRO:\n${e.message}`, 'error');
+    }
+}
+
+// TEST 4: CRIAR MANUAL
+async function createManual() {
+    showLoading('result4');
+    
+    const title = document.getElementById('titleInput').value || 'Teste';
+    const body = document.getElementById('bodyInput').value || 'Notificação';
+    
+    try {
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (!session) {
+            showResult('result4', '❌ Não autenticado', 'error');
+            return;
+        }
+        
+        // 1. Inserir mensagem
+        const { data: msg, error: msgErr } = await window.supabaseClient
+            .from('admin_messages')
+            .insert([{ title, body }])
+            .select();
+        
+        if (msgErr || !msg?.length) {
+            showResult('result4', `❌ Erro ao criar mensagem:\n${msgErr?.message}`, 'error');
+            return;
+        }
+        
+        const messageId = msg[0].id;
+        
+        // 2. Inserir delivery
+        const { error: delivErr } = await window.supabaseClient
+            .from('message_deliveries')
+            .insert([{
+                user_id: session.user.id,
+                message_id: messageId,
+                status: 'pending'
+            }]);
+        
+        if (delivErr) {
+            showResult('result4', `❌ Erro ao criar delivery:\n${delivErr.message}`, 'error');
+            return;
+        }
+        
+        let msg_result = `✅ NOTIFICAÇÃO CRIADA!\n\nID: ${messageId}\n\n⏳ Aguardando polling (até 10s)...`;
+        showResult('result4', msg_result, 'success');
+        
+        // 3. Aguardar e verificar
+        let checked = false;
+        for (let i = 0; i < 10; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            
+            const { data: check } = await window.supabaseClient
+                .from('message_deliveries')
+                .select('status')
+                .eq('message_id', messageId)
+                .single();
+            
+            if (check?.status === 'sent') {
+                showResult('result4', `✅ SUCESSO!\n\nNotificação foi processada pelo polling.\n\nVerifique o painel do app.`, 'success');
+                checked = true;
+                break;
+            }
+        }
+        
+        if (!checked) {
+            showResult('result4', `⚠️ TIMEOUT\n\nNotificação criada mas polling NÃO processou.\n\nVerifique se polling está rodando.`, 'pending');
+        }
+    } catch (e) {
+        showResult('result4', `❌ ERRO:\n${e.message}`, 'error');
+    }
+}
+
+// TEST 5: FORÇAR POLLING
+async function forcePolling() {
+    showLoading('result5');
+    
+    try {
+        if (typeof window.pushNotifications?.startPolling !== 'function') {
+            showResult('result5', '❌ Push module não está disponível', 'error');
+            return;
+        }
+        
+        await window.pushNotifications.startPolling();
+        showResult('result5', `✅ Polling forçado!\n\nVerifique o painel em 2-3 segundos.`, 'success');
+    } catch (e) {
+        showResult('result5', `❌ ERRO:\n${e.message}`, 'error');
+    }
+}
+
+// Auto-run system check
+window.addEventListener('load', () => {
+    setTimeout(testSystem, 500);
+});
+</script>
+</body>
+</html>

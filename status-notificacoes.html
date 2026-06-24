@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Status Notificações</title>
+    <link rel="stylesheet" href="fonts/material-symbols.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0812;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            padding: 20px;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 30px;
+            color: #c084fc;
+            text-align: center;
+        }
+        .status-item {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(192,132,252,0.2);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .status-icon {
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+        .status-content {
+            flex: 1;
+        }
+        .status-label {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        .status-value {
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+        }
+        .success { background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); }
+        .success .status-icon { color: #10b981; }
+        
+        .error { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); }
+        .error .status-icon { color: #ef4444; }
+        
+        .warning { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.3); }
+        .warning .status-icon { color: #f59e0b; }
+        
+        .button-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 30px;
+        }
+        button {
+            flex: 1;
+            background: #7c3aed;
+            border: none;
+            color: #fff;
+            padding: 14px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+        }
+        button:active {
+            background: #6d28d9;
+            transform: scale(0.96);
+        }
+        .info-box {
+            background: rgba(124,58,237,0.1);
+            border: 1px solid rgba(192,132,252,0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 20px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.8);
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📱 Status do Sistema</h1>
+
+    <div id="statusContainer"></div>
+
+    <div class="button-group">
+        <button onclick="location.reload()">🔄 Recarregar</button>
+        <button onclick="clearAllCache()">🗑️ Limpar Cache</button>
+    </div>
+
+    <div class="info-box">
+        <strong>Guia rápido:</strong><br>
+        • ✅ Verde = funcionando<br>
+        • ❌ Vermelho = erro<br>
+        • ⚠️ Amarelo = aviso<br>
+        <br>Se tudo estiver verde, notificações devem aparecer em breve.
+    </div>
+</div>
+
+<script src="supabase-config.js"></script>
+<script>
+async function updateStatus() {
+    const checks = [];
+
+    // 1. Supabase carregado?
+    if (window.supabaseClient) {
+        try {
+            const { data: { session } } = await window.supabaseClient.auth.getSession();
+            if (session) {
+                checks.push({
+                    label: 'Autenticação',
+                    value: session.user.email,
+                    status: 'success',
+                    icon: '✅'
+                });
+            } else {
+                checks.push({
+                    label: 'Autenticação',
+                    value: 'Não autenticado',
+                    status: 'error',
+                    icon: '❌'
+                });
+            }
+        } catch (e) {
+            checks.push({
+                label: 'Autenticação',
+                value: 'Erro: ' + e.message,
+                status: 'error',
+                icon: '❌'
+            });
+        }
+    } else {
+        checks.push({
+            label: 'Autenticação',
+            value: 'supabaseClient não carregado',
+            status: 'error',
+            icon: '❌'
+        });
+    }
+
+    // 2. FendaNotifications carregado?
+    checks.push({
+        label: 'Painel de Notificações',
+        value: typeof FendaNotifications !== 'undefined' ? 'Carregado' : 'Não encontrado',
+        status: typeof FendaNotifications !== 'undefined' ? 'success' : 'error',
+        icon: typeof FendaNotifications !== 'undefined' ? '✅' : '❌'
+    });
+
+    // 3. Push module carregado?
+    checks.push({
+        label: 'Push Notifications',
+        value: typeof window.pushNotifications !== 'undefined' ? 'Carregado' : 'Não encontrado',
+        status: typeof window.pushNotifications !== 'undefined' ? 'success' : 'error',
+        icon: typeof window.pushNotifications !== 'undefined' ? '✅' : '❌'
+    });
+
+    // 4. Permissão de notificações
+    checks.push({
+        label: 'Permissão de Notificações',
+        value: Notification.permission,
+        status: Notification.permission === 'granted' ? 'success' : Notification.permission === 'default' ? 'warning' : 'error',
+        icon: Notification.permission === 'granted' ? '✅' : Notification.permission === 'default' ? '⚠️' : '❌'
+    });
+
+    // 5. Service Worker
+    if ('serviceWorker' in navigator) {
+        try {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            checks.push({
+                label: 'Service Worker',
+                value: regs.length > 0 ? `${regs.length} registrado(s)` : 'Nenhum',
+                status: regs.length > 0 ? 'success' : 'warning',
+                icon: regs.length > 0 ? '✅' : '⚠️'
+            });
+        } catch (e) {
+            checks.push({
+                label: 'Service Worker',
+                value: 'Erro: ' + e.message,
+                status: 'error',
+                icon: '❌'
+            });
+        }
+    } else {
+        checks.push({
+            label: 'Service Worker',
+            value: 'Não suportado',
+            status: 'error',
+            icon: '❌'
+        });
+    }
+
+    // 6. Notificações pendentes?
+    if (window.supabaseClient) {
+        try {
+            const { data: { session } } = await window.supabaseClient.auth.getSession();
+            if (session) {
+                const { data, error } = await window.supabaseClient
+                    .from('message_deliveries')
+                    .select('*')
+                    .eq('user_id', session.user.id)
+                    .eq('status', 'pending');
+
+                if (error) {
+                    checks.push({
+                        label: 'Notificações Pendentes',
+                        value: 'Erro: ' + error.message,
+                        status: 'error',
+                        icon: '❌'
+                    });
+                } else {
+                    checks.push({
+                        label: 'Notificações Pendentes',
+                        value: data?.length || 0 + ' encontradas',
+                        status: data?.length > 0 ? 'success' : 'warning',
+                        icon: data?.length > 0 ? '✅' : '⚠️'
+                    });
+                }
+            }
+        } catch (e) {
+            checks.push({
+                label: 'Notificações Pendentes',
+                value: 'Erro: ' + e.message,
+                status: 'error',
+                icon: '❌'
+            });
+        }
+    }
+
+    // Renderizar
+    const container = document.getElementById('statusContainer');
+    container.innerHTML = checks.map(check => `
+        <div class="status-item ${check.status}">
+            <div class="status-icon">${check.icon}</div>
+            <div class="status-content">
+                <div class="status-label">${check.label}</div>
+                <div class="status-value">${check.value}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function clearAllCache() {
+    try {
+        // Limpar localStorage
+        const keys = Object.keys(localStorage);
+        keys.forEach(key => {
+            if (key.includes('fenda') || key.includes('supabase')) {
+                localStorage.removeItem(key);
+            }
+        });
+
+        // Limpar Service Workers
+        if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const reg of regs) {
+                await reg.unregister();
+            }
+        }
+
+        // Limpar IndexedDB
+        const dbs = await window.indexedDB.databases();
+        for (const db of dbs) {
+            window.indexedDB.deleteDatabase(db.name);
+        }
+
+        alert('✅ Cache limpo! Recarregando...');
+        location.reload();
+    } catch (e) {
+        alert('❌ Erro ao limpar: ' + e.message);
+    }
+}
+
+// Atualizar ao carregar
+window.addEventListener('load', () => {
+    setTimeout(updateStatus, 1000);
+});
+
+// Atualizar a cada 5 segundos
+setInterval(updateStatus, 5000);
+</script>
+</body>
+</html>
