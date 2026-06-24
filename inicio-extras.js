@@ -111,7 +111,18 @@
                 <h1 class="inicio-name" id="ieName">…</h1>
                 <p class="inicio-date">${formatDate()}</p>
             </div>
+            <button class="inicio-notif-btn" id="notifBellBtn" aria-label="Notificações">
+                <span class="material-symbols-rounded">notifications</span>
+                <span class="inicio-notif-dot" id="notifDot"></span>
+            </button>
         `;
+        // Abre tela de notificações ao clicar no sino
+        header.querySelector('#notifBellBtn')?.addEventListener('click', () => {
+            window.FendaNotifications?.openNotifications();
+        });
+        // Atualiza bolinha imediatamente após criar o botão
+        // (renderHeader pode ser chamado mais de uma vez — garantir dot sempre atualizado)
+        window.FendaNotifications?.updateDot();
         TAB.prepend(header);
 
         try {
@@ -747,6 +758,11 @@
         // header/avatar (autenticação pode demorar mais que o boot inicial)
         setTimeout(() => { renderDynamic(); reorderHomeSections(); }, 1000);
         setTimeout(() => { renderHeader(); }, 2500);
+        // Inicializa sistema de notificações (delay pequeno para aguardar DOM)
+        setTimeout(() => {
+            window.FendaNotifications?.init();
+            window.FendaNotifications?.updateDot();
+        }, 500);
     }
 
     if (document.readyState === 'loading') {

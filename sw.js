@@ -13,7 +13,7 @@ const SHELL = [
   '/supabase-config.js', '/search.js',
   '/player-core.js', '/player-ui.js', '/player-audio-lyrics.js',
   '/player-menus-core.js', '/player-music-actions.js', '/player-playlists.js',
-  '/player-session.js', '/player-smart-queue.js', '/inicio-extras.js',
+  '/player-session.js', '/player-smart-queue.js', '/notifications.js', '/notifications.css', '/inicio-extras.js',
 ];
 
 // Mensagem de skip waiting (forçar atualização imediata)
@@ -239,7 +239,19 @@ self.addEventListener('push', event => {
     };
 
     event.waitUntil(
-        self.registration.showNotification(title, options)
+        Promise.all([
+            self.registration.showNotification(title, options),
+            // Envia para todos os clientes abertos adicionarem na lista
+            self.clients.matchAll({ type: 'window' }).then(clients =>
+                clients.forEach(c => c.postMessage({
+                    type: 'PUSH_NOTIFICATION',
+                    title,
+                    body:    options.body,
+                    image:   options.image,
+                    musicId: payload.musicId || null,
+                }))
+            )
+        ])
     );
 });
 

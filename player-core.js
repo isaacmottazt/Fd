@@ -1297,3 +1297,17 @@ window.clearAppCache = async () => {
     await CacheDB.clear();
     console.log('[Cache]  Cache apagado');
 };
+// ── Integração com notificações push ───────────────────────────────────────
+// Ouve mensagens do Service Worker e repassa para o sistema de notificações
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', event => {
+        const data = event.data || {};
+        if (data.type === 'PUSH_NOTIFICATION') {
+            window.FendaNotifications?.addFromPush(data);
+        }
+        if (data.type === 'NOTIFICATION_CLICK' && data.musicId) {
+            const music = AppState.musics.find(m => String(m.id) === String(data.musicId));
+            if (music) playMusicTrack(music);
+        }
+    });
+}

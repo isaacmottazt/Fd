@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="busca.css" />
     <link rel="stylesheet" href="biblioteca.css" />
     <link rel="stylesheet" href="perfil.css" />
+    <link rel="stylesheet" href="notifications.css" />
     <link rel="stylesheet" href="artist-detail.css" />
     <link rel="stylesheet" href="painel.css" />
     <style>
@@ -72,108 +73,6 @@
         min-height: 100dvh !important;
         height: auto !important;
         flex-shrink: 0 !important;
-      }
-      /* ── FIX OVERFLOW HORIZONTAL (home + biblioteca) ───────────────────────
-         .main-content não tinha overflow-x definido. Os carrosséis com
-         margin: 0 -16px causavam scroll horizontal na página inteira.
-         Ao trocar de aba, o viewport ficava deslocado para a direita,
-         cortando o conteúdo à esquerda em TODAS as abas. */
-      .main-content {
-        overflow-x: hidden !important;
-      }
-      .tab-content {
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-      }
-
-      /* ── FIX PLAYLIST ITEMS INVISÍVEIS (biblioteca → Tudo) ──────────────────
-         As cores usam variáveis CSS (--lib-ink etc.) que podem não resolver
-         se uma versão antiga do biblioteca.css está em cache.
-         Fallback explícito garante visibilidade independente do cache. */
-      .playlist-left {
-        display: flex !important;
-        align-items: center !important;
-        gap: 14px !important;
-        flex: 1 !important;
-        min-width: 0 !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-      }
-      .playlist-icon {
-        width: 58px !important;
-        height: 58px !important;
-        border-radius: 16px !important;
-        background: linear-gradient(150deg, #3a1d6b, #160c2e) !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        flex-shrink: 0 !important;
-        overflow: hidden !important;
-      }
-      .playlist-icon .material-symbols-rounded {
-        font-size: 26px !important;
-        color: #c084fc !important;
-      }
-      .playlist-info { min-width: 0 !important; }
-      .playlist-info h4 {
-        font-size: 15px !important;
-        font-weight: 700 !important;
-        color: #f0eaff !important;
-        margin: 0 0 3px !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-      }
-      .playlist-info p {
-        font-size: 12px !important;
-        color: rgba(255,255,255,0.5) !important;
-        margin: 0 !important;
-      }
-      .playlist-more {
-        color: rgba(255,255,255,0.28) !important;
-        background: none !important;
-        border: none !important;
-        width: 36px !important;
-        height: 36px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        flex-shrink: 0 !important;
-      }
-
-      /* ── FIX BIBLIOTECA "TUDO" — stats + artistas ───────────────────────────
-         Grid de 4 colunas pode overflow em telas pequenas.
-         Elementos com min-width implícito precisam de min-width: 0. */
-      #libAllSection {
-        overflow-x: hidden !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-      }
-      .lib-all-stats {
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-      }
-      .lib-stat-pill {
-        min-width: 0 !important;
-        overflow: hidden !important;
-      }
-      .lib-stat-num {
-        color: #ffffff !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        white-space: nowrap !important;
-      }
-      .lib-stat-lbl {
-        color: rgba(255,255,255,0.38) !important;
-      }
-      .lib-all-artist-chip-name {
-        color: #f0eaff !important;
-      }
-      .lib-all-fav-title {
-        color: #f0eaff !important;
-      }
-      .lib-all-fav-artist {
-        color: rgba(255,255,255,0.45) !important;
       }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -761,6 +660,36 @@
       <div id="lyricsScroller" style="display: none"></div>
     </div>
 
+    <!-- OVERLAY DE NOTIFICAÇÕES -->
+    <div id="notificationsOverlay" class="notifications-overlay">
+        <div class="notif-header">
+            <span class="material-symbols-rounded notif-header-icon">notifications</span>
+            <h1>Notificações</h1>
+            <button class="notif-close-btn" id="notifCloseBtn">
+                <span class="material-symbols-rounded">close</span>
+            </button>
+        </div>
+
+        <div class="notif-tabs">
+            <button class="notif-tab active" data-tab="all">Todas</button>
+            <button class="notif-tab" data-tab="unread">Não lidas</button>
+        </div>
+
+        <!-- Prompt para ativar push (some após ativar) -->
+        <div class="notif-prompt-card" id="notifPromptCard">
+            <div class="notif-prompt-icon">
+                <span class="material-symbols-rounded">notifications_active</span>
+            </div>
+            <div class="notif-prompt-text">
+                <strong>Ative as notificações</strong>
+                <span>Receba novidades e recomendações exclusivas no seu dia a dia.</span>
+            </div>
+            <button class="notif-activate-btn" id="notifActivateBtn">Ativar</button>
+        </div>
+
+        <div class="notif-list" id="notifList"></div>
+    </div>
+
     <!-- MODAIS -->
     <div id="playlistModal" class="modal-backdrop">
       <div class="modal-content-box">
@@ -944,6 +873,7 @@
     <script src="player-music-actions.js"></script>
     <script src="search.js"></script>
     <script src="player-smart-queue.js"></script>
+    <script src="notifications.js"></script>
     <script src="inicio-extras.js"></script>
     <script>
       // Registra o service worker para habilitar funcionamento offline (PWA)
