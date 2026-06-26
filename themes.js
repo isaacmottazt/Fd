@@ -1,14 +1,13 @@
-// themes.js v5 - Cor principal + modo claro/escuro
+// themes.js v7 - Modo escuro fixo, sem opção claro
 
 class FendaThemes {
   constructor() {
     this.savedColor = localStorage.getItem('fenda-color') || '#7c3aed';
-    this.savedMode = localStorage.getItem('fenda-mode') || 'dark';
-    this.styleEl = null;
+    this.savedMode = 'dark'; // SEMPRE dark
+    this.root = document.documentElement;
     this.init();
   }
 
-  // Converte hex para HSL
   hexToHSL(hex) {
     let r = parseInt(hex.slice(1,3),16)/255;
     let g = parseInt(hex.slice(3,5),16)/255;
@@ -28,7 +27,6 @@ class FendaThemes {
     return { h: Math.round(h*360), s: Math.round(s*100), l: Math.round(l*100) };
   }
 
-  // Gera variações da cor
   generatePalette(hex) {
     const { h, s } = this.hexToHSL(hex);
     return {
@@ -36,39 +34,70 @@ class FendaThemes {
       hi:   `hsl(${h},${Math.min(s+5,100)}%,65%)`,
       up:   `hsl(${h},${Math.min(s+5,100)}%,75%)`,
       dark: `hsl(${h},${Math.min(s+5,100)}%,28%)`,
-      glow: `hsla(${h},${Math.min(s+5,100)}%,50%,0.4)`,
+      darker: `hsl(${h},${Math.min(s+5,100)}%,20%)`,
+      glow: `hsla(${h},${Math.min(s+5,100)}%,50%,0.45)`,
       soft: `hsla(${h},${Math.min(s+5,100)}%,50%,0.15)`,
-      line: `hsla(${h},${Math.min(s+5,100)}%,50%,0.2)`,
+      line: `hsla(${h},${Math.min(s+5,100)}%,50%,0.25)`,
       grad: `linear-gradient(135deg, hsl(${h},${Math.min(s+5,100)}%,38%), hsl(${(h+30)%360},${Math.min(s+5,100)}%,55%))`,
-      gradProfile: `linear-gradient(135deg, hsl(${h},${Math.min(s+5,100)}%,22%), hsl(${h},${Math.min(s+5,100)}%,38%), hsl(${(h+30)%360},${Math.min(s+5,100)}%,55%))`,
+      gradDark: `linear-gradient(135deg, hsl(${h},${Math.min(s+5,100)}%,35%), hsl(${h},${Math.min(s+5,100)}%,20%), hsl(${h},${Math.min(s+5,100)}%,10%))`,
+      gradProfile: `linear-gradient(145deg, hsl(${h},${Math.min(s+5,100)}%,40%), hsl(${h},${Math.min(s+5,100)}%,20%), hsl(${h},${Math.min(s+5,100)}%,5%))`,
+      gradMagenta: `linear-gradient(135deg, hsl(${(h-30+360)%360},${Math.min(s+5,100)}%,35%), hsl(${h},${Math.min(s+5,100)}%,40%))`,
+      gradHero: `linear-gradient(120deg, hsl(0,0%,100%) 25%, hsl(${h},${Math.min(s+5,100)}%,60%) 65%, hsl(${(h+60)%360},100%,50%) 100%)`,
     };
   }
 
-  apply(color, mode) {
+  apply(color, mode = 'dark') {
+    // FORÇA sempre modo dark
+    mode = 'dark';
     const p = this.generatePalette(color);
-    const L = mode === 'light';
+    const L = false; // Sempre false = dark mode
 
-    const bg     = L ? '#f8f8fc' : '#0a0a0f';
-    const bg2    = L ? '#f2f2f8' : '#0f0f1a';
-    const bg3    = L ? '#e8e8f0' : '#07070c';
-    const surf   = L ? '#ffffff' : '#1c1826';
-    const surf2  = L ? '#f5f5fb' : '#12101c';
-    const navBg  = L ? 'rgba(248,248,252,0.95)' : 'rgba(10,10,15,0.92)';
-    const ink    = L ? '#111118' : '#ffffff';
-    const inkMid = L ? 'rgba(17,17,24,0.62)' : 'rgba(255,255,255,0.65)';
-    const inkLow = L ? 'rgba(17,17,24,0.42)' : 'rgba(255,255,255,0.40)';
-    const inkFnt = L ? 'rgba(17,17,24,0.26)' : 'rgba(255,255,255,0.22)';
-    const border = L ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)';
-    const cardBg = L ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)';
-    const inptBg = L ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)';
-    const playerBg = L
-      ? `linear-gradient(145deg, hsl(${this.hexToHSL(color).h},30%,92%), #f8f8fc)`
-      : `linear-gradient(145deg, hsl(${this.hexToHSL(color).h},40%,8%), #050305)`;
-    const playerGrad = L
-      ? `linear-gradient(160deg, hsl(${this.hexToHSL(color).h},40%,85%), hsl(${this.hexToHSL(color).h},20%,95%))`
-      : `linear-gradient(160deg, hsl(${this.hexToHSL(color).h},50%,14%), hsl(${this.hexToHSL(color).h},30%,5%))`;
+    // Cores para modo ESCURO
+    const bg     = '#0a0a0f';
+    const bg2    = '#0f0f1a';
+    const bg3    = '#07070c';
+    const surf   = '#1c1826';
+    const surf2  = '#12101c';
+    const navBg  = 'rgba(10,10,15,0.92)';
+    const ink    = '#ffffff';
+    const inkMid = 'rgba(255,255,255,0.65)';
+    const inkLow = 'rgba(255,255,255,0.40)';
+    const inkFnt = 'rgba(255,255,255,0.22)';
+    const border = 'rgba(255,255,255,0.06)';
+    const cardBg = 'rgba(255,255,255,0.05)';
+    const inptBg = 'rgba(255,255,255,0.07)';
+    const playerBg = `linear-gradient(145deg, hsl(${this.hexToHSL(color).h},40%,8%), #050305)`;
 
-    this.styleEl.textContent = `
+    // ATUALIZA AS VARIÁVEIS CSS GLOBAIS
+    this.root.style.setProperty('--primary-base', p.base);
+    this.root.style.setProperty('--primary-hi', p.hi);
+    this.root.style.setProperty('--primary-up', p.up);
+    this.root.style.setProperty('--primary-dark', p.dark);
+    this.root.style.setProperty('--primary-darker', p.darker);
+    this.root.style.setProperty('--primary-glow', p.glow);
+    this.root.style.setProperty('--primary-soft', p.soft);
+    this.root.style.setProperty('--primary-line', p.line);
+    this.root.style.setProperty('--primary-grad', p.grad);
+    this.root.style.setProperty('--primary-grad-dark', p.gradDark);
+    this.root.style.setProperty('--primary-grad-light', p.gradMagenta);
+    this.root.style.setProperty('--grad-hero', p.gradHero);
+    this.root.style.setProperty('--grad-profile', p.gradProfile);
+    this.root.style.setProperty('--grad-magenta', p.gradMagenta);
+
+    // Cores secundárias
+    this.root.style.setProperty('--secondary-hi', p.up);
+    this.root.style.setProperty('--secondary-glow', p.glow);
+    this.root.style.setProperty('--secondary-soft', p.soft);
+
+    // INJETA CSS PARA ELEMENTOS ESPECÍFICOS
+    const styleEl = document.getElementById('fenda-theme-inject') || (() => {
+      const el = document.createElement('style');
+      el.id = 'fenda-theme-inject';
+      document.head.appendChild(el);
+      return el;
+    })();
+
+    styleEl.textContent = `
       body{background:${bg}!important;color:${ink}!important}
       .app-container{background:linear-gradient(180deg,${bg2} 0%,${bg3} 100%)!important}
 
@@ -77,28 +106,28 @@ class FendaThemes {
       .nav-btn.active{color:${p.base}!important}
       .nav-btn p,.nav-btn span{color:inherit!important}
 
-      .player-bottom-bar{background:${L?'rgba(255,255,255,0.9)':'rgba(18,12,30,0.75)'}!important;box-shadow:0 8px 32px rgba(0,0,0,0.2),0 0 0 1px ${p.base}20!important}
+      .player-bottom-bar{background:rgba(18,12,30,0.75)!important;box-shadow:0 8px 32px rgba(0,0,0,0.2),0 0 0 1px ${p.base}20!important}
       .mini-ring-fill{stroke:${p.hi}!important}
       .mini-ctrl-play{background:${p.base}!important;box-shadow:0 2px 12px ${p.glow}!important}
       .mini-info h4{color:${ink}!important}
       .mini-info p{color:${inkMid}!important}
 
       .lyrics-full-screen{background:${playerBg}!important}
-      .player-bg{background:${playerGrad}!important}
+      .player-bg{background:${p.grad}!important}
       .ctrl-play{background:${p.grad}!important;box-shadow:0 4px 20px ${p.glow}!important}
       .player-seek-fill{background:${p.base}!important}
       .player-seek-thumb{background:${p.base}!important}
-      .player-mini-controls{background:${L?surf+'f5':'rgba(6,4,14,0.97)'}!important;border-top-color:${p.base}14!important}
+      .player-mini-controls{background:rgba(6,4,14,0.97)!important;border-top-color:${p.base}14!important}
       .player-mini-play{background:${p.grad}!important}
       .player-mini-info span:first-child{color:${ink}!important}
       .player-mini-info span:last-child{color:${inkLow}!important}
-      #playerExpandedTitle{color:${L?ink:'#fff'}!important}
-      #playerExpandedArtist{color:${L?inkMid:'rgba(255,255,255,0.6)'}!important}
+      #playerExpandedTitle{color:#fff!important}
+      #playerExpandedArtist{color:rgba(255,255,255,0.6)!important}
       #currentTime,#totalTime{color:${inkLow}!important}
-      .ctrl-extra,.ctrl-main{color:${L?inkMid:'rgba(255,255,255,0.7)'}!important}
-      .player-fav-big,.player-action-btn{color:${L?inkLow:'rgba(255,255,255,0.5)'}!important}
+      .ctrl-extra,.ctrl-main{color:rgba(255,255,255,0.7)!important}
+      .player-fav-big,.player-action-btn{color:rgba(255,255,255,0.5)!important}
       .player-lyrics-header{color:${inkMid}!important}
-      .lyrics-container-content p{color:${L?inkFnt:'rgba(255,255,255,0.32)'}!important}
+      .lyrics-container-content p{color:rgba(255,255,255,0.32)!important}
       .lyrics-container-content p.active{color:${ink}!important}
       .player-top-context,.player-top-playlist{color:${inkMid}!important}
 
@@ -130,8 +159,7 @@ class FendaThemes {
       #biblioteca{
         --lib-violet:${p.base};--lib-violet-hi:${p.hi};--lib-violet-up:${p.up};
         --lib-violet-glow:${p.glow};--lib-ink:${ink};--lib-ink-mid:${inkMid};
-        --lib-ink-low:${inkLow};--lib-ink-faint:${inkFnt};
-        --lib-surface:${L?'rgba(255,255,255,0.9)':'rgba(22,18,38,0.78)'};
+        --lib-ink-low:${inkLow};--lib-ink-faint:${inkFnt};--lib-surface:rgba(22,18,38,0.78);
         --lib-surface-2:${surf};--lib-border:${border};--lib-border-hi:${p.line};
         --lib-surface-hi:${cardBg};
       }
@@ -182,7 +210,7 @@ class FendaThemes {
       .notif-prompt-card{background:${p.soft}!important;border-color:${p.line}!important}
       .notif-activate-btn{background:${p.grad}!important;color:#fff!important}
 
-      .queue-panel{background:${L?surf2:playerBg}!important;border-left-color:${p.base}28!important}
+      .queue-panel{background:${playerBg}!important;border-left-color:${p.base}28!important}
       .queue-panel-header h3{color:${ink}!important}
       .qp-playing-bar{background:${p.grad}!important}
 
@@ -190,16 +218,32 @@ class FendaThemes {
     `;
 
     localStorage.setItem('fenda-color', color);
-    localStorage.setItem('fenda-mode', mode);
+    localStorage.setItem('fenda-mode', 'dark'); // SEMPRE dark
     this.savedColor = color;
-    this.savedMode = mode;
+    this.savedMode = 'dark';
   }
 
   init() {
-    this.styleEl = document.createElement('style');
-    this.styleEl.id = 'fenda-theme-css';
-    document.head.appendChild(this.styleEl);
-    this.apply(this.savedColor, this.savedMode);
+    // Injeta o CSS de variáveis globais se ainda não estiver
+    if (!document.getElementById('theme-variables-css')) {
+      const link = document.createElement('link');
+      link.id = 'theme-variables-css';
+      link.rel = 'stylesheet';
+      link.href = 'theme-variables.css';
+      document.head.insertBefore(link, document.head.firstChild);
+    }
+
+    // Injeta o CSS de sobrescrita
+    if (!document.getElementById('theme-overrides-css')) {
+      const link = document.createElement('link');
+      link.id = 'theme-overrides-css';
+      link.rel = 'stylesheet';
+      link.href = 'theme-overrides.css';
+      document.head.insertBefore(link, document.head.firstChild);
+    }
+
+    // Aplica o tema salvo (sempre dark)
+    this.apply(this.savedColor, 'dark');
   }
 
   renderThemePicker() {
@@ -222,26 +266,14 @@ class FendaThemes {
       <div>
         <h3 style="margin:0 0 20px;font-size:19px;font-weight:800">🎨 Personalizar</h3>
 
-        <!-- Modo claro/escuro -->
-        <p style="font-size:11px;font-weight:700;letter-spacing:0.07em;opacity:0.45;margin:0 0 10px;text-transform:uppercase">Modo</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:22px">
-          <button onclick="fendaThemes.apply(fendaThemes.savedColor,'dark')" style="
-            padding:12px;border-radius:14px;border:1.5px solid ${this.savedMode==='dark'?this.savedColor:'rgba(128,128,128,0.15)'};
-            background:${this.savedMode==='dark'?this.savedColor+'15':'rgba(128,128,128,0.06)'};
-            cursor:pointer;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px
-          ">🌙 Escuro ${this.savedMode==='dark'?'✓':''}</button>
-          <button onclick="fendaThemes.apply(fendaThemes.savedColor,'light')" style="
-            padding:12px;border-radius:14px;border:1.5px solid ${this.savedMode==='light'?this.savedColor:'rgba(128,128,128,0.15)'};
-            background:${this.savedMode==='light'?this.savedColor+'15':'rgba(128,128,128,0.06)'};
-            cursor:pointer;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px
-          ">☀️ Claro ${this.savedMode==='light'?'✓':''}</button>
-        </div>
+        <!-- Modo: SÓ ESCURO, SEM OPÇÃO DE CLARO -->
+        <p style="font-size:12px;font-weight:700;letter-spacing:0.07em;opacity:0.6;margin:0 0 16px;text-transform:uppercase">Modo: Escuro 🌙</p>
 
         <!-- Cor principal -->
         <p style="font-size:11px;font-weight:700;letter-spacing:0.07em;opacity:0.45;margin:0 0 12px;text-transform:uppercase">Cor principal</p>
         <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px">
           ${colors.map(c => `
-            <button onclick="fendaThemes.apply('${c.hex}',fendaThemes.savedMode)" title="${c.name}" style="
+            <button onclick="fendaThemes.apply('${c.hex}')" title="${c.name}" style="
               width:100%;aspect-ratio:1;border-radius:50%;
               background:${c.hex};border:3px solid ${this.savedColor===c.hex?'white':'transparent'};
               cursor:pointer;box-shadow:${this.savedColor===c.hex?`0 0 0 2px ${c.hex}`:'none'};
@@ -254,7 +286,7 @@ class FendaThemes {
         <p style="font-size:11px;font-weight:700;letter-spacing:0.07em;opacity:0.45;margin:0 0 10px;text-transform:uppercase">Cor personalizada</p>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
           <input type="color" value="${this.savedColor}"
-            oninput="fendaThemes.apply(this.value,fendaThemes.savedMode)"
+            oninput="fendaThemes.apply(this.value)"
             style="width:48px;height:48px;border-radius:12px;border:none;cursor:pointer;padding:2px;background:none"
           />
           <div>
