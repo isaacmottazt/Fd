@@ -1,6 +1,8 @@
 // ===== SISTEMA DE COMPARTILHAMENTO DE MÚSICA (PREVIEW 30s + IMAGEM) =====
 
 const SharedMusicModule = {
+    _fendaLogoCache: null,  // Cache da logo em memória
+    
     /**
      * Gera link compartilhável para uma música
      * @param {Object} music - Objeto da música {id, title, artist, cover, ...}
@@ -32,6 +34,11 @@ const SharedMusicModule = {
     async generateShareImage(music, startTime = 0) {
         return new Promise(async (resolve) => {
             try {
+                // Pré-carregar logo antes de gerar imagem
+                if (!this._fendaLogoCache) {
+                    await this._loadFendaLogo();
+                }
+
                 if (!music || !music.cover) {
                     console.warn('[SharedMusic] Música sem capa, gerando genérica');
                     const genericImg = await this._generateGenericImage(music, startTime);
@@ -93,6 +100,34 @@ const SharedMusicModule = {
     },
 
     /**
+     * Carrega a logo do Fenda (cache em memória)
+     * @private
+     */
+    async _loadFendaLogo() {
+        if (this._fendaLogoCache) {
+            return this._fendaLogoCache;
+        }
+
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            
+            img.onload = () => {
+                this._fendaLogoCache = img;
+                resolve(img);
+            };
+            
+            img.onerror = () => {
+                console.warn('[SharedMusic] Erro ao carregar logo, usando fallback');
+                resolve(null);
+            };
+            
+            // Caminho relativo da logo
+            img.src = './icons/icon-512.png';
+        });
+    },
+
+    /**
      * Cria canvas idêntico ao design de referência (Fenda Music Card)
      * @private
      */
@@ -107,46 +142,40 @@ const SharedMusicModule = {
             
             this._ensureRoundRect(ctx);
             
-            // ===== FUNDO ROXO VIBRANTE =====
+            // ===== FUNDO ROXO VIBRANTE (todo background) =====
             const bgGradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-            bgGradient.addColorStop(0, '#7c3aed');    // Roxo vibrante
-            bgGradient.addColorStop(1, '#6d28d9');    // Roxo um pouco mais escuro
+            bgGradient.addColorStop(0, '#8b5cf6');
+            bgGradient.addColorStop(1, '#7c3aed');
             ctx.fillStyle = bgGradient;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // ===== CARD BRANCO/CLARO COM SOMBRA (container da capa) =====
-            const cardX = 80;
-            const cardY = 100;
-            const cardWidth = canvas.width - 160;
-            const cardHeight = 620;
-            const cardRadius = 40;
+            // ===== CARD CONTAINER COM SOMBRA =====
+            const cardPadding = 60;
+            const cardX = cardPadding;
+            const cardY = cardPadding;
+            const cardWidth = canvas.width - (cardPadding * 2);
+            const cardHeight = canvas.height - (cardPadding * 2) - 80;
+            const cardRadius = 35;
             
             // Sombra do card
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-            ctx.shadowBlur = 30;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+            ctx.shadowBlur = 25;
             ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 15;
+            ctx.shadowOffsetY = 12;
             
-            // Card fundo (roxo claro)
+            // Card background (roxo um pouco mais claro)
             ctx.fillStyle = '#7c3aed';
             ctx.beginPath();
             ctx.roundRect(cardX, cardY, cardWidth, cardHeight, cardRadius);
             ctx.fill();
             
-            // Limpar shadow
             ctx.shadowColor = 'transparent';
 
-            // ===== CAPA DA MÚSICA (DENTRO DO CARD) =====
-            const coverSize = 480;
+            // ===== CAPA DA MÚSICA =====
+            const coverSize = 380;
             const coverX = cardX + (cardWidth - coverSize) / 2;
             const coverY = cardY + 50;
-            const coverRadius = 20;
-            
-            // Sombra interna da capa
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-            ctx.shadowBlur = 15;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 8;
+            const coverRadius = 15;
             
             ctx.save();
             ctx.beginPath();
@@ -155,44 +184,52 @@ const SharedMusicModule = {
             ctx.drawImage(coverImg, coverX, coverY, coverSize, coverSize);
             ctx.restore();
             
-            // Border sutil na capa
-            ctx.shadowColor = 'transparent';
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-            ctx.lineWidth = 2;
+            // Border na capa
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.roundRect(coverX, coverY, coverSize, coverSize, coverRadius);
             ctx.stroke();
 
-            // ===== TÍTULO DA MÚSICA =====
-            const titleY = coverY + coverSize + 80;
+            // ===== TÍTULO =====
+            const titleStartY = coverY + coverSize + 60;
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 54px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+            ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
             ctx.textAlign = 'center';
-            ctx.letterSpacing = '0px';
+            ctx.lineHeight = 1.3;
             
-            const titleLines = this._wrapText(music.title, 20);
-            titleLines.forEach((line, i) => {
-                ctx.fillText(line, canvas.width / 2, titleY + i * 70);
+            const titleLines = this._wrapText(music.title, 22);
+            titleLines.slice(0, 2).forEach((line, i) => {
+                ctx.fillText(line, canvas.width / 2, titleStartY + i * 60);
             });
 
             // ===== ARTISTA =====
-            const artistY = titleY + titleLines.length * 70 + 35;
-            ctx.fillStyle = '#e5e7eb';  // Cinza bem claro
-            ctx.font = '38px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+            const artistY = titleStartY + Math.min(titleLines.length, 2) * 60 + 30;
+            ctx.fillStyle = '#d1d5db';
+            ctx.font = '36px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
             ctx.fillText(music.artist || 'Artista', canvas.width / 2, artistY);
 
             // ===== RODAPÉ COM LOGO FENDA =====
-            const footerY = canvas.height - 120;
+            const footerY = cardY + cardHeight - 60;
+            const logoSize = 50;
             
-            // Logo símbolo <||> 
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 40px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText('<||>', canvas.width / 2 - 80, footerY);
-            
-            // "Fenda Music" texto
-            ctx.font = '36px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-            ctx.fillText('Fenda Music', canvas.width / 2 + 60, footerY);
+            // Se tiver logo em cache, desenhar
+            if (this._fendaLogoCache) {
+                const logoX = canvas.width / 2 - 120;
+                ctx.drawImage(this._fendaLogoCache, logoX, footerY - logoSize / 2, logoSize, logoSize);
+                
+                // "Fenda Music" ao lado da logo
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 40px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText('Fenda Music', logoX + logoSize + 15, footerY + 10);
+            } else {
+                // Fallback se logo não carregar
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 44px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('<||>Fenda Music', canvas.width / 2, footerY);
+            }
 
             return canvas;
         } catch (e) {
@@ -216,22 +253,23 @@ const SharedMusicModule = {
         
         // Fundo roxo vibrante
         const bgGradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-        bgGradient.addColorStop(0, '#7c3aed');
-        bgGradient.addColorStop(1, '#6d28d9');
+        bgGradient.addColorStop(0, '#8b5cf6');
+        bgGradient.addColorStop(1, '#7c3aed');
         ctx.fillStyle = bgGradient;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Card container roxo
-        const cardX = 80;
-        const cardY = 100;
-        const cardWidth = canvas.width - 160;
-        const cardHeight = 620;
-        const cardRadius = 40;
+        const cardPadding = 60;
+        const cardX = cardPadding;
+        const cardY = cardPadding;
+        const cardWidth = canvas.width - (cardPadding * 2);
+        const cardHeight = canvas.height - (cardPadding * 2) - 80;
+        const cardRadius = 35;
         
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-        ctx.shadowBlur = 30;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+        ctx.shadowBlur = 25;
         ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 15;
+        ctx.shadowOffsetY = 12;
         
         ctx.fillStyle = '#7c3aed';
         ctx.beginPath();
@@ -240,50 +278,59 @@ const SharedMusicModule = {
         
         ctx.shadowColor = 'transparent';
 
-        // Placeholder de capa (cinza claro)
-        const coverSize = 480;
+        // Placeholder de capa
+        const coverSize = 380;
         const coverX = cardX + (cardWidth - coverSize) / 2;
         const coverY = cardY + 50;
-        const coverRadius = 20;
+        const coverRadius = 15;
         
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
         ctx.beginPath();
         ctx.roundRect(coverX, coverY, coverSize, coverSize, coverRadius);
         ctx.fill();
         
         // Ícone no meio
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.font = 'bold 100px Arial';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.font = 'bold 90px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('🎵', canvas.width / 2, coverY + coverSize / 2);
 
         // Título
-        const titleY = coverY + coverSize + 80;
+        const titleStartY = coverY + coverSize + 60;
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 54px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+        ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
         ctx.textAlign = 'center';
         
-        const titleLines = this._wrapText(music.title, 20);
-        titleLines.forEach((line, i) => {
-            ctx.fillText(line, canvas.width / 2, titleY + i * 70);
+        const titleLines = this._wrapText(music.title, 22);
+        titleLines.slice(0, 2).forEach((line, i) => {
+            ctx.fillText(line, canvas.width / 2, titleStartY + i * 60);
         });
 
         // Artista
-        const artistY = titleY + titleLines.length * 70 + 35;
-        ctx.fillStyle = '#e5e7eb';
-        ctx.font = '38px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+        const artistY = titleStartY + Math.min(titleLines.length, 2) * 60 + 30;
+        ctx.fillStyle = '#d1d5db';
+        ctx.font = '36px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
         ctx.fillText(music.artist || 'Artista', canvas.width / 2, artistY);
 
         // Logo Fenda
-        const footerY = canvas.height - 120;
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 40px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('<||>', canvas.width / 2 - 80, footerY);
+        const footerY = cardY + cardHeight - 60;
+        const logoSize = 50;
         
-        ctx.font = '36px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
-        ctx.fillText('Fenda Music', canvas.width / 2 + 60, footerY);
+        if (this._fendaLogoCache) {
+            const logoX = canvas.width / 2 - 120;
+            ctx.drawImage(this._fendaLogoCache, logoX, footerY - logoSize / 2, logoSize, logoSize);
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 40px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('Fenda Music', logoX + logoSize + 15, footerY + 10);
+        } else {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 44px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('<||>Fenda Music', canvas.width / 2, footerY);
+        }
 
         return canvas.toDataURL('image/png');
     },
